@@ -1,0 +1,12 @@
+{
+  "recorded_utc": "2026-11-19T13:21:59.649946+00:00",
+  "changed_items": [
+    "crest_ij"
+  ],
+  "original_driver_sha256": "fbe0651984563a317b69963ae9bac1d82ef6d9fb8317e647c5c3882e6adbaa14",
+  "corrected_driver_sha256": "3da214401eb156d720c7383f8fc5114f405c63f72fb4166ab3c9013d4ac30a86",
+  "registered_score_sha256": "db30d5cda3a26a59559aae0b1b04e2e27c4ca66681368ecb6bae66c269fda8d3",
+  "reason": "The frozen JSON reference and the reply encode the same crest coordinate as JSON arrays. The original driver passed Python tuples directly to a type-sensitive scorer. The corrected driver validates the deck-derived reference bytes, then scores their JSON representation. The original reference, tolerances, labels and return text are identical.",
+  "control_text": "Exact-label scoring remains in force for the registered control fields. A separate reading of the three ORAT explanations is reported in the README.",
+  "archive_verification": "The original registered score must reproduce byte for byte in its serialized JSON representation."
+}

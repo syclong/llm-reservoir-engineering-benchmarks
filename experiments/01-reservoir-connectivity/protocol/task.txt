@@ -1,0 +1,19 @@
+Interpret the self-contained reservoir simulation deck after the marker. Use only the deck in this message. Respond once with a single JSON object in English.
+
+Describe the reservoir structure, areal distribution of reservoir-quality rock, vertical separation, fluid system and initial contacts, rock properties and anisotropy, wells, and controls. Infer interwell communication from the numerical arrays and open completions. Cite deck keywords and numerical evidence in short explanations. Distinguish what the static deck establishes from quantities that require a dynamic response.
+
+Use one-based logical I,J,K. The I index varies fastest in cell arrays; standard deck repetition syntax applies. Report the crest as the active cell with the shallowest mean of the four top-face corner depths in the first grid layer; accept either cell in a tie. A reservoir-quality cell is active and has both PERMX and PERMY at least 1 mD. A body within one layer is a face-connected set of such cells. A face is traversable only if both cells are active, the two normal permeabilities are positive, and the appropriate positive-direction face multiplier on the lower-index cell is positive. Count all bodies, including isolated bodies. A same-body result compares the two well columns at the stated K irrespective of perforation. An open-completion path may traverse any active rock and any open formation face in three dimensions, starting and ending on OPEN completions. Do not traverse wellbores when tracing this path.
+
+Use the following fields and types. Include every layer in increasing K, every adjacent layer interface, every well, and every unordered pair of distinct wells once. Preserve native units specified below. Use null when you cannot support a value, and true/false for connectivity.
+- grid: {dims: [nx, ny, nz], active_by_k: [integers], dx_m: number, dy_m: number}
+- geology: {structure: "central_high"|"central_low"|"monocline"|"flat"|"other", crest_ij: [i,j], crest_top_m: number, description: text}
+- fluids: {phases: [phase names in English], dissolved_gas: boolean, datum_depth_m: number, datum_pressure_bar: number, owc_m: number, goc_m: number, aquifer_specified: boolean, description: text}
+- layers: [{k: integer, role: "reservoir"|"barrier"|"other", high_perm_cells: integer, high_perm_bodies: integer, mean_thickness_m: number, rock_evidence: text}]. Average thickness over active cells, using the mean of the four vertical corner differences per cell.
+- vertical: [{k: [upper_k,lower_k], formation_link: boolean, evidence: text}]. Say whether any active cell pair shares a traversable face across each interface.
+- wells: [{name: text, ij: [i,j], open_k: [integers], control: text, oil_target_sm3_d: number, bhp_limit_bar: number}]
+- pairs: [{wells: [first,second], same_body_by_k: [booleans, one per logical K], open_completion_link: boolean, evidence: text}]. If a well column has no reservoir-quality cell at that K, return false for that layer.
+- schedule_days: number
+- wellbore_interpretation: text
+- limits: text
+
+BEGIN DATA

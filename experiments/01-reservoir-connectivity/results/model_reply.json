@@ -1,0 +1,111 @@
+{
+  "grid": {
+    "dims": [19, 28, 3],
+    "active_by_k": [382, 382, 382],
+    "dx_m": 180,
+    "dy_m": 180
+  },
+  "geology": {
+    "structure": "central_high",
+    "crest_ij": [10, 14],
+    "crest_top_m": 2360.23945,
+    "description": "COORD and ZCORN define three conformable layers over a central dome, within a 3420 by 5040 m rectangle and an oval ACTNUM footprint. At (10,14,1), two top-face corners are 2360.35425 m and two are 2360.12465 m, giving the shallowest active-cell mean of 2360.23945 m; (10,15,1) ties. Reservoir-quality rock forms a continuous diagonal band in K=1 and two separate lobes in K=3. The total vertical thickness is 31.87125 m."
+  },
+  "fluids": {
+    "phases": ["oil", "water", "gas"],
+    "dissolved_gas": true,
+    "datum_depth_m": 2355,
+    "datum_pressure_bar": 234.46,
+    "owc_m": 2405,
+    "goc_m": 2355,
+    "aquifer_specified": false,
+    "description": "OIL, WATER, GAS and DISGAS, with PVTO, PVDG and PVTW, specify a black-oil fluid system with dissolved gas. EQUIL sets the datum and contacts with zero contact capillary pressures; SWFN and SGFN also specify zero capillary pressure. RSVD gives a constant initial solution gas ratio of 74 Sm3/Sm3, and SWFN starts at water saturation 0.2. The specified GOC is above the shallowest ZCORN top corner, 2360.12465 m, so there is no initial gas cap within the grid. The OWC intersects the structure, including the lower completed intervals of W2 and W3. No aquifer keywords are supplied. DRSDT 0 prevents increases in solution gas ratio during the schedule."
+  },
+  "layers": [
+    {
+      "k": 1,
+      "role": "reservoir",
+      "high_perm_cells": 126,
+      "high_perm_bodies": 1,
+      "mean_thickness_m": 8.31375,
+      "rock_evidence": "PERMX=PERMY ranges from 4664.45835 to 5909.0658 mD in the 126 reservoir-quality cells, with PORO 0.223812015 to 0.237381838. They form one connected band extending from I=14..16 at J=7 toward I=4..6 at J=23. The remaining 256 active cells have horizontal permeability 0.001 mD and PORO 0.0727329295. PERMZ is 0.1 times horizontal permeability throughout this layer. MULTX/MULTY zeros seal the band's perimeter. ZCORN corner differences give uniform thickness 8.31375 m. ROCK specifies compressibility 0.00045 bar^-1 at 235 bar for the model."
+    },
+    {
+      "k": 2,
+      "role": "barrier",
+      "high_perm_cells": 0,
+      "high_perm_bodies": 0,
+      "mean_thickness_m": 10,
+      "rock_evidence": "PORO is 0.04, PERMX=PERMY=0.00001 mD and PERMZ=0.0000001 mD throughout K=2, giving vertical-to-horizontal permeability ratio 0.01. All 382 active cells fall below the reservoir-quality threshold. ZCORN gives uniform thickness 10 m. MULTZ zeros close both bounding interfaces, establishing complete vertical formation separation despite the small positive permeabilities."
+    },
+    {
+      "k": 3,
+      "role": "reservoir",
+      "high_perm_cells": 47,
+      "high_perm_bodies": 2,
+      "mean_thickness_m": 13.5575,
+      "rock_evidence": "PERMX=PERMY ranges from 4771.51661 to 5909.0658 mD in the 47 reservoir-quality cells, with PORO 0.22497926 to 0.237381838. One body contains 34 cells within I=8..17, J=8..16; the other contains 13 cells within I=3..7, J=18..22. MULTX/MULTY zeros seal both perimeters. The remaining 335 active cells have horizontal permeability 0.001 mD and PORO 0.0727329295. PERMZ is 0.1 times horizontal permeability throughout this layer. ZCORN gives uniform thickness 13.5575 m."
+    }
+  ],
+  "vertical": [
+    {
+      "k": [1, 2],
+      "formation_link": false,
+      "evidence": "MULTZ 1064*0 532*1 assigns zero to all 532 K=1 positive-K face multipliers. Consequently, all 382 active K=1/K=2 cell pairs have closed faces, despite positive PERMZ on both sides."
+    },
+    {
+      "k": [2, 3],
+      "formation_link": false,
+      "evidence": "The second block of 532 MULTZ entries is zero at K=2, closing all 382 active K=2/K=3 faces. The final 532 ones belong to K=3 positive-K faces and do not reopen the K=2/K=3 interface."
+    }
+  ],
+  "wells": [
+    {
+      "name": "W1",
+      "ij": [10, 14],
+      "open_k": [1],
+      "control": "WCONPROD OPEN ORAT oil producer in group G1, subject to a minimum BHP constraint.",
+      "oil_target_sm3_d": 50,
+      "bhp_limit_bar": 180
+    },
+    {
+      "name": "W2",
+      "ij": [15, 10],
+      "open_k": [3],
+      "control": "WCONPROD OPEN ORAT oil producer in group G1, subject to a minimum BHP constraint.",
+      "oil_target_sm3_d": 50,
+      "bhp_limit_bar": 180
+    },
+    {
+      "name": "W3",
+      "ij": [5, 20],
+      "open_k": [1, 3],
+      "control": "WCONPROD OPEN ORAT oil producer in group G1, subject to a minimum BHP constraint.",
+      "oil_target_sm3_d": 50,
+      "bhp_limit_bar": 180
+    }
+  ],
+  "pairs": [
+    {
+      "wells": ["W1", "W2"],
+      "same_body_by_k": [true, false, true],
+      "open_completion_link": false,
+      "evidence": "Both columns lie in the 126-cell K=1 body and the 34-cell K=3 body; K=2 has no reservoir-quality cells. However, COMPDAT opens W1 only in K=1 and W2 only in K=3. MULTZ=0 across both interfaces prevents a formation path between their OPEN completions."
+    },
+    {
+      "wells": ["W1", "W3"],
+      "same_body_by_k": [true, false, false],
+      "open_completion_link": true,
+      "evidence": "Their OPEN K=1 cells belong to the same 126-cell body and connect through positive internal MULTX/MULTY faces. K=2 has no reservoir-quality cells. Their K=3 columns occupy the separate 34-cell and 13-cell bodies. The open-completion connection is entirely through K=1 formation rock."
+    },
+    {
+      "wells": ["W2", "W3"],
+      "same_body_by_k": [true, false, false],
+      "open_completion_link": false,
+      "evidence": "Their K=1 columns share the 126-cell body, but W2 has no OPEN completion there. Their OPEN K=3 cells occupy the separate 34-cell and 13-cell bodies. MULTX/MULTY=0 around both bodies prevents a bypass through the positive-permeability background. MULTZ=0 also prevents access from W2 to W3's K=1 completion; K=2 has no reservoir-quality cells."
+    }
+  ],
+  "schedule_days": 365,
+  "wellbore_interpretation": "COMPDAT specifies Z-directed completions with diameter 0.15 m and skin 5.0; no well is completed in K=2. W3 can produce from K=1 and K=3 through a common well under one rate target and BHP constraint, commingling their production. WELSPECS specifies NO crossflow, so transfer between formations through the wellbore is not enabled. W3's two completions do not create a formation connection across MULTZ seals. All reported open-completion paths exclude wellbore traversal. TSTEP totals 0.1+0.9+4+10+11*30+20=365 days from START 01 JAN 1967.",
+  "limits": "The static deck establishes geometry, rock properties, equilibrium contact specifications, formation-path connectivity and scheduled controls. A true connectivity result establishes a possible formation route but does not quantify pressure interference or flow. Drawdown, interference timing and magnitude, achieved production rates, allocation between W3's layers, water or gas breakthrough, evolving saturations and recovery require a dynamic solution. The 50 Sm3/d values are targets subject to the 180 bar minimum BHP constraints. SUMMARY requests pressure, production and well responses, but no simulation results are provided."
+}

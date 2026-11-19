@@ -1,0 +1,34 @@
+{
+  "model": "gpt-6-astra",
+  "input_messages": 1,
+  "previous_messages": 0,
+  "registered_tools": 0,
+  "attachments": 0,
+  "requested_effort": "max",
+  "requested_tool_choice": "none",
+  "output_token_limit": 32768,
+  "prompt_sha256": "45d1403e72752aa5fd74c326806c19f24aa1a6972030ad2a819bd45272694a36",
+  "utf8_bytes": 119187,
+  "started_utc": "2026-11-19T13:14:40.252291+00:00",
+  "status": "completed",
+  "http_status": 200,
+  "event_stream": true,
+  "response_id_sha256": "f3148f40203ff3879cbc9e9101b4ff2e0fdc108253566f138c7ed99e7a846026",
+  "returned_model": "gpt-6-astra",
+  "last_event_utc": "2026-11-19T13:19:46.783374+00:00",
+  "completed_utc": "2026-11-19T13:19:53.831193+00:00",
+  "seconds": 313.579000000027,
+  "output_types": [
+    "message",
+    "reasoning"
+  ],
+  "reported_effort": "max",
+  "returned_tools_count": 0,
+  "usage": {
+    "input_tokens": 101251,
+    "output_tokens": 18240,
+    "total_tokens": 119491
+  },
+  "reasoning_tokens": 15382,
+  "response_sha256": "7cf9762298283d275d709dc6ad1364f61650bfa6bc0bd6e7aa82d836b538f19a"
+}

@@ -1,0 +1,17 @@
+{
+  "recorded_utc": "2026-11-19T13:14:15.103527+00:00",
+  "first_transport": {
+    "started_utc": "2026-11-19T12:49:30.412917+00:00",
+    "last_event_utc": "2026-11-19T13:13:09.639574+00:00",
+    "status": "failed_before_delivery",
+    "failure": "TimeoutError",
+    "http_status": 200,
+    "response_id_sha256": "c0ad8341cbeeeb9fcaedcfae7cf8924ef847202e2e76c6bfd1395551b956620c",
+    "prompt_sha256": "45d1403e72752aa5fd74c326806c19f24aa1a6972030ad2a819bd45272694a36",
+    "returned_model": "gpt-6-astra"
+  },
+  "first_visible_answer_bytes": 0,
+  "initial_read_timeout_s": 1200,
+  "recovery_read_timeout_s": 3900,
+  "recovery_policy": "Retransmit the identical request body and idempotency key. Only the first complete visible reply is eligible. Record transport attempts and compare backend response identifiers. No answer or feedback is added to the prompt."
+}

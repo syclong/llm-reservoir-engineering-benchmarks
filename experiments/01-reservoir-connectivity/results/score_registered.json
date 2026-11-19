@@ -1,0 +1,497 @@
+{
+  "valid_json": true,
+  "groups": {
+    "grid_and_structure": {
+      "correct": 6,
+      "total": 7
+    },
+    "fluids": {
+      "correct": 7,
+      "total": 7
+    },
+    "layers": {
+      "correct": 12,
+      "total": 12
+    },
+    "vertical_interfaces": {
+      "correct": 2,
+      "total": 2
+    },
+    "well_locations_and_completions": {
+      "correct": 6,
+      "total": 6
+    },
+    "controls_and_schedule": {
+      "correct": 7,
+      "total": 10
+    },
+    "reservoir_pair_layers": {
+      "correct": 6,
+      "total": 6
+    },
+    "nonreservoir_pair_layers": {
+      "correct": 3,
+      "total": 3
+    },
+    "open_completion_pairs": {
+      "correct": 3,
+      "total": 3
+    }
+  },
+  "items": [
+    {
+      "group": "grid_and_structure",
+      "item": "dims",
+      "actual": [
+        19,
+        28,
+        3
+      ],
+      "expected": [
+        19,
+        28,
+        3
+      ],
+      "correct": true
+    },
+    {
+      "group": "grid_and_structure",
+      "item": "active_by_k",
+      "actual": [
+        382,
+        382,
+        382
+      ],
+      "expected": [
+        382,
+        382,
+        382
+      ],
+      "correct": true
+    },
+    {
+      "group": "grid_and_structure",
+      "item": "dx_m",
+      "actual": 180,
+      "expected": 180.0,
+      "correct": true
+    },
+    {
+      "group": "grid_and_structure",
+      "item": "dy_m",
+      "actual": 180,
+      "expected": 180.0,
+      "correct": true
+    },
+    {
+      "group": "grid_and_structure",
+      "item": "structure",
+      "actual": "central_high",
+      "expected": "central_high",
+      "correct": true
+    },
+    {
+      "group": "grid_and_structure",
+      "item": "crest_ij",
+      "actual": [
+        10,
+        14
+      ],
+      "expected": [
+        10,
+        14
+      ],
+      "correct": false
+    },
+    {
+      "group": "grid_and_structure",
+      "item": "crest_top_m",
+      "actual": 2360.23945,
+      "expected": 2360.23945,
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "phases",
+      "actual": [
+        "gas",
+        "oil",
+        "water"
+      ],
+      "expected": [
+        "gas",
+        "oil",
+        "water"
+      ],
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "dissolved_gas",
+      "actual": true,
+      "expected": true,
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "datum_depth_m",
+      "actual": 2355,
+      "expected": 2355.0,
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "datum_pressure_bar",
+      "actual": 234.46,
+      "expected": 234.46,
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "owc_m",
+      "actual": 2405,
+      "expected": 2405.0,
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "goc_m",
+      "actual": 2355,
+      "expected": 2355.0,
+      "correct": true
+    },
+    {
+      "group": "fluids",
+      "item": "aquifer_specified",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K1.role",
+      "actual": "reservoir",
+      "expected": "reservoir",
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K1.high_perm_cells",
+      "actual": 126,
+      "expected": 126,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K1.high_perm_bodies",
+      "actual": 1,
+      "expected": 1,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K1.mean_thickness_m",
+      "actual": 8.31375,
+      "expected": 8.313749999999986,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K2.role",
+      "actual": "barrier",
+      "expected": "barrier",
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K2.high_perm_cells",
+      "actual": 0,
+      "expected": 0,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K2.high_perm_bodies",
+      "actual": 0,
+      "expected": 0,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K2.mean_thickness_m",
+      "actual": 10,
+      "expected": 10.0,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K3.role",
+      "actual": "reservoir",
+      "expected": "reservoir",
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K3.high_perm_cells",
+      "actual": 47,
+      "expected": 47,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K3.high_perm_bodies",
+      "actual": 2,
+      "expected": 2,
+      "correct": true
+    },
+    {
+      "group": "layers",
+      "item": "K3.mean_thickness_m",
+      "actual": 13.5575,
+      "expected": 13.557499999999997,
+      "correct": true
+    },
+    {
+      "group": "vertical_interfaces",
+      "item": "[1, 2]",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "vertical_interfaces",
+      "item": "[2, 3]",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "well_locations_and_completions",
+      "item": "W1.ij",
+      "actual": [
+        10,
+        14
+      ],
+      "expected": [
+        10,
+        14
+      ],
+      "correct": true
+    },
+    {
+      "group": "well_locations_and_completions",
+      "item": "W1.open_k",
+      "actual": [
+        1
+      ],
+      "expected": [
+        1
+      ],
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W1.control",
+      "actual": "WCONPROD OPEN ORAT oil producer in group G1, subject to a minimum BHP constraint.",
+      "expected": "ORAT",
+      "correct": false
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W1.oil_target_sm3_d",
+      "actual": 50,
+      "expected": 50.0,
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W1.bhp_limit_bar",
+      "actual": 180,
+      "expected": 180.0,
+      "correct": true
+    },
+    {
+      "group": "well_locations_and_completions",
+      "item": "W2.ij",
+      "actual": [
+        15,
+        10
+      ],
+      "expected": [
+        15,
+        10
+      ],
+      "correct": true
+    },
+    {
+      "group": "well_locations_and_completions",
+      "item": "W2.open_k",
+      "actual": [
+        3
+      ],
+      "expected": [
+        3
+      ],
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W2.control",
+      "actual": "WCONPROD OPEN ORAT oil producer in group G1, subject to a minimum BHP constraint.",
+      "expected": "ORAT",
+      "correct": false
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W2.oil_target_sm3_d",
+      "actual": 50,
+      "expected": 50.0,
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W2.bhp_limit_bar",
+      "actual": 180,
+      "expected": 180.0,
+      "correct": true
+    },
+    {
+      "group": "well_locations_and_completions",
+      "item": "W3.ij",
+      "actual": [
+        5,
+        20
+      ],
+      "expected": [
+        5,
+        20
+      ],
+      "correct": true
+    },
+    {
+      "group": "well_locations_and_completions",
+      "item": "W3.open_k",
+      "actual": [
+        1,
+        3
+      ],
+      "expected": [
+        1,
+        3
+      ],
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W3.control",
+      "actual": "WCONPROD OPEN ORAT oil producer in group G1, subject to a minimum BHP constraint.",
+      "expected": "ORAT",
+      "correct": false
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W3.oil_target_sm3_d",
+      "actual": 50,
+      "expected": 50.0,
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "W3.bhp_limit_bar",
+      "actual": 180,
+      "expected": 180.0,
+      "correct": true
+    },
+    {
+      "group": "controls_and_schedule",
+      "item": "schedule_days",
+      "actual": 365,
+      "expected": 365.0,
+      "correct": true
+    },
+    {
+      "group": "reservoir_pair_layers",
+      "item": "W1/W2.K1",
+      "actual": true,
+      "expected": true,
+      "correct": true
+    },
+    {
+      "group": "nonreservoir_pair_layers",
+      "item": "W1/W2.K2",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "reservoir_pair_layers",
+      "item": "W1/W2.K3",
+      "actual": true,
+      "expected": true,
+      "correct": true
+    },
+    {
+      "group": "open_completion_pairs",
+      "item": "W1/W2",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "reservoir_pair_layers",
+      "item": "W1/W3.K1",
+      "actual": true,
+      "expected": true,
+      "correct": true
+    },
+    {
+      "group": "nonreservoir_pair_layers",
+      "item": "W1/W3.K2",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "reservoir_pair_layers",
+      "item": "W1/W3.K3",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "open_completion_pairs",
+      "item": "W1/W3",
+      "actual": true,
+      "expected": true,
+      "correct": true
+    },
+    {
+      "group": "reservoir_pair_layers",
+      "item": "W2/W3.K1",
+      "actual": true,
+      "expected": true,
+      "correct": true
+    },
+    {
+      "group": "nonreservoir_pair_layers",
+      "item": "W2/W3.K2",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "reservoir_pair_layers",
+      "item": "W2/W3.K3",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    },
+    {
+      "group": "open_completion_pairs",
+      "item": "W2/W3",
+      "actual": false,
+      "expected": false,
+      "correct": true
+    }
+  ]
+}

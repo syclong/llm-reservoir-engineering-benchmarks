@@ -1,0 +1,302 @@
+{
+  "grid": {
+    "dims": [
+      19,
+      28,
+      3
+    ],
+    "active_by_k": [
+      382,
+      382,
+      382
+    ],
+    "dx_m": 180.0,
+    "dy_m": 180.0,
+    "active_total": 1146,
+    "logical_total": 1596
+  },
+  "geology": {
+    "structure": "central_high",
+    "crest_ij": [
+      10,
+      14
+    ],
+    "tied_crest_ij": [
+      [
+        10,
+        14
+      ],
+      [
+        10,
+        15
+      ]
+    ],
+    "crest_top_m": 2360.23945,
+    "active_top_range_m": [
+      2360.23945,
+      2401.202195
+    ],
+    "flank_relief_m": [
+      40.38781000000017,
+      40.38781000000017,
+      35.81632499999978,
+      35.81632499999978
+    ]
+  },
+  "fluids": {
+    "phases": [
+      "oil",
+      "water",
+      "gas"
+    ],
+    "dissolved_gas": true,
+    "datum_depth_m": 2355.0,
+    "datum_pressure_bar": 234.46,
+    "owc_m": 2405.0,
+    "goc_m": 2355.0,
+    "aquifer_specified": false
+  },
+  "layers": [
+    {
+      "k": 1,
+      "role": "reservoir",
+      "active_cells": 382,
+      "high_perm_cells": 126,
+      "high_perm_bodies": 1,
+      "body_sizes": [
+        126
+      ],
+      "mean_thickness_m": 8.313749999999986,
+      "sand_footprint_km2": 4.0824,
+      "properties": {
+        "reservoir_quality": {
+          "PORO": [
+            0.223812015,
+            0.237381838
+          ],
+          "PERMX": [
+            4664.45835,
+            5909.0658
+          ],
+          "PERMY": [
+            4664.45835,
+            5909.0658
+          ],
+          "PERMZ": [
+            466.445835,
+            590.90658
+          ]
+        },
+        "other_active": {
+          "PORO": [
+            0.0727329295,
+            0.0727329295
+          ],
+          "PERMX": [
+            0.001,
+            0.001
+          ],
+          "PERMY": [
+            0.001,
+            0.001
+          ],
+          "PERMZ": [
+            0.0001,
+            0.0001
+          ]
+        }
+      }
+    },
+    {
+      "k": 2,
+      "role": "barrier",
+      "active_cells": 382,
+      "high_perm_cells": 0,
+      "high_perm_bodies": 0,
+      "body_sizes": [],
+      "mean_thickness_m": 10.0,
+      "sand_footprint_km2": 0.0,
+      "properties": {
+        "reservoir_quality": {
+          "PORO": null,
+          "PERMX": null,
+          "PERMY": null,
+          "PERMZ": null
+        },
+        "other_active": {
+          "PORO": [
+            0.04,
+            0.04
+          ],
+          "PERMX": [
+            1e-05,
+            1e-05
+          ],
+          "PERMY": [
+            1e-05,
+            1e-05
+          ],
+          "PERMZ": [
+            1e-07,
+            1e-07
+          ]
+        }
+      }
+    },
+    {
+      "k": 3,
+      "role": "reservoir",
+      "active_cells": 382,
+      "high_perm_cells": 47,
+      "high_perm_bodies": 2,
+      "body_sizes": [
+        34,
+        13
+      ],
+      "mean_thickness_m": 13.557499999999997,
+      "sand_footprint_km2": 1.5228,
+      "properties": {
+        "reservoir_quality": {
+          "PORO": [
+            0.22497926,
+            0.237381838
+          ],
+          "PERMX": [
+            4771.51661,
+            5909.0658
+          ],
+          "PERMY": [
+            4771.51661,
+            5909.0658
+          ],
+          "PERMZ": [
+            477.151661,
+            590.90658
+          ]
+        },
+        "other_active": {
+          "PORO": [
+            0.0727329295,
+            0.0727329295
+          ],
+          "PERMX": [
+            0.001,
+            0.001
+          ],
+          "PERMY": [
+            0.001,
+            0.001
+          ],
+          "PERMZ": [
+            0.0001,
+            0.0001
+          ]
+        }
+      }
+    }
+  ],
+  "vertical": [
+    {
+      "k": [
+        1,
+        2
+      ],
+      "formation_link": false,
+      "active_faces": 382,
+      "open_faces": 0
+    },
+    {
+      "k": [
+        2,
+        3
+      ],
+      "formation_link": false,
+      "active_faces": 382,
+      "open_faces": 0
+    }
+  ],
+  "wells": [
+    {
+      "name": "W1",
+      "ij": [
+        10,
+        14
+      ],
+      "open_k": [
+        1
+      ],
+      "control": "ORAT",
+      "oil_target_sm3_d": 50.0,
+      "bhp_limit_bar": 180.0,
+      "allow_wellbore_crossflow": false
+    },
+    {
+      "name": "W2",
+      "ij": [
+        15,
+        10
+      ],
+      "open_k": [
+        3
+      ],
+      "control": "ORAT",
+      "oil_target_sm3_d": 50.0,
+      "bhp_limit_bar": 180.0,
+      "allow_wellbore_crossflow": false
+    },
+    {
+      "name": "W3",
+      "ij": [
+        5,
+        20
+      ],
+      "open_k": [
+        1,
+        3
+      ],
+      "control": "ORAT",
+      "oil_target_sm3_d": 50.0,
+      "bhp_limit_bar": 180.0,
+      "allow_wellbore_crossflow": false
+    }
+  ],
+  "pairs": [
+    {
+      "wells": [
+        "W1",
+        "W2"
+      ],
+      "same_body_by_k": [
+        true,
+        false,
+        true
+      ],
+      "open_completion_link": false
+    },
+    {
+      "wells": [
+        "W1",
+        "W3"
+      ],
+      "same_body_by_k": [
+        true,
+        false,
+        false
+      ],
+      "open_completion_link": true
+    },
+    {
+      "wells": [
+        "W2",
+        "W3"
+      ],
+      "same_body_by_k": [
+        true,
+        false,
+        false
+      ],
+      "open_completion_link": false
+    }
+  ],
+  "schedule_days": 365.0
+}

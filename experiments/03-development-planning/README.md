@@ -1,4 +1,4 @@
-# LLM Reservoir Planning Benchmark
+# Experiment 03 · Reservoir development planning
 
 Compare language-model proposals with particle swarm optimization (PSO) for joint well placement and bottom-hole pressure control. Each plan specifies two injectors, two producers, and five pressure periods per well. JutulDarcy evaluates it from the same initial state over 3,650 days. The objective is field cumulative surface oil production (FOPT) in standard cubic meters.
 
@@ -18,7 +18,7 @@ These prompts are the English edition. The earlier study used Chinese prompts. T
 
 ## Install
 
-Use Python 3.12 and Julia 1.10.9 to match the development environment. From the repository root, install the numerical dependencies and run the tests.
+Use Python 3.12 and Julia 1.10.9 to match the development environment. From this experiment directory, install the numerical dependencies and run the tests.
 
 ~~~sh
 python -m pip install -r requirements.txt

@@ -1,0 +1,32 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "max",
+  "messages": 1,
+  "tools": 0,
+  "attachments": 0,
+  "previous_messages": 0,
+  "original_sha256": "888f4c59ecf8c3709e9369dea81cffadbb7f2a7534bd7fcad38373d5d8580ff0",
+  "removed_reporting_keywords": [
+    "FIPNUM",
+    "REGDIMS",
+    "RPR"
+  ],
+  "masked_deck_sha256": "0bbdcc6545383308fb02db446edaa925b0404276a4190d8bf828a11dfe382805",
+  "prompt_utf8_bytes": 119187,
+  "prompt_sha256": "45d1403e72752aa5fd74c326806c19f24aa1a6972030ad2a819bd45272694a36",
+  "reference_sha256": "421db01600890468804b5248270cdc2585955be0d76be64deae02d9d505a05ce",
+  "code_sha256": {
+    "deck.py": "4abe5c5ba84b674e233d24520615ae6251c23188df76314299894a2f30265c2c",
+    "reference.py": "e155c133a22c076e8440830002cc0dc8234e3557e7037f3b7b96f37a81c8e78a",
+    "score.py": "9c4762b6e4c23de86a32b95dab6c5eef944619e46cd6b241e7a20f0010caa9b7",
+    "reproduce.py": "fbe0651984563a317b69963ae9bac1d82ef6d9fb8317e647c5c3882e6adbaa14",
+    "protocol/task.txt": "66784f2eeafb9ca5d4d37b0f9bd33d82176115c22ea0ba42b87be46164db8e7a"
+  },
+  "primary": "reservoir_pair_layers",
+  "secondary": [
+    "open_completion_pairs",
+    "vertical_interfaces"
+  ],
+  "score_policy": "Counts and labels exact; geometry/fluid depths +/-0.5 m; pressure +/-0.1 bar; rate +/-0.1 sm3/d; schedule +/-0.01 d. Missing, duplicate or unsupported scored claims receive zero. No resampling.",
+  "registered_utc": "2026-11-19T12:47:51.299142+00:00"
+}
