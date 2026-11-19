@@ -1,0 +1,41 @@
+{
+  "id": "PUNQ_ONE_STEP_CELL_FIELDS_V1",
+  "model": "gpt-6-astra",
+  "shape": [
+    19,
+    28,
+    5
+  ],
+  "active_cells": 1761,
+  "wells": [
+    "PRO-1",
+    "PRO-4",
+    "PRO-5",
+    "PRO-11",
+    "PRO-12",
+    "PRO-15",
+    "PRO-20"
+  ],
+  "intervals": 52,
+  "history_rows": 364,
+  "flowing_rows": 274,
+  "start": "1967-01-01",
+  "end": "1983-07-01",
+  "deck_sha256": "d06b190f2902e0cc63146b04501ca129112a697fcd7d8ad254ee24179372e3ee",
+  "targets_sha256": "b41693c9d9dd1c21896a123838602e4b5fff0548bd52fec248934e0332b4e33f",
+  "original_source_sha256": {
+    "PUNQ_S3N.DATA": "0562839bec9a1fc46ea8e403823e04e718861c093d573891395b9980d17fe89f",
+    "INCLUDE/PUNQ_S3.GEO": "8f0ff52ec7ddffb7a0bc0cee159a74973bf05e5eccfe82e33b27ce665534988a",
+    "INCLUDE/PUNQS3.PRP": "317222f79fa9bfcd1ea045615d0dd0e4d3c4241f6cb5bc560b51e07b1693c620",
+    "INCLUDE/PUNQ_S3N_permx.inc": "e7df3bda50caf48a14b3478c5a14171b45ed03dae180f80890bb273379f3c756",
+    "INCLUDE/PUNQ_S3N_permy.inc": "12d664113f718271cfd6f40510cd42fea2bd1b7839718c639207855916345d5a",
+    "INCLUDE/PUNQ_S3N_permz.inc": "22099405c9c11c784340a48c8a40e444f5580b02e6472bdec0d56356db2131c1",
+    "INCLUDE/AQUIFER.inc": "5ea17848f8a29e8bffb06435b55f087a41c4b9576e10246aab1c4c9d7a0d495c",
+    "SUMMARY/SUMMARY.INC": "02ecadd844b6ba4bc27d65f60a9530e16172c57ca3d3c7adb2d350effaffc379",
+    "INCLUDE/sch.inc": "4788c1c4574e4e41d732e0095ac2e62f7528aad7a11aeb4052688bca7a3280ec"
+  },
+  "history_source": "WCONHIST with WELOPEN, verified against OPM WOPRH/WWPRH at report endpoints",
+  "objective": "well-balanced water-cut RMSE in percentage points",
+  "baseline_and_candidate": "same initial state, deck controls, solver and numerical settings",
+  "proposal_budget": 1
+}

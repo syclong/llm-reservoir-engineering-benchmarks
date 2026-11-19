@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.zip binary
+*.png binary
+*.pdf binary
+
+# These files retain source whitespace for the archived numerical experiment.
+inputs/BASE.DATA -whitespace
+results/CANDIDATE.DATA -whitespace
+prompts/single_step.txt -whitespace

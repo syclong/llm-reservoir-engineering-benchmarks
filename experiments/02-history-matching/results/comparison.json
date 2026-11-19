@@ -1,0 +1,47 @@
+{
+  "baseline": {
+    "watercut_rmse_pp": 7.2332650428555505,
+    "oil_rate_rmse_sm3_d": 33.296246650787346,
+    "water_rate_rmse_sm3_d": 8.781358706999713,
+    "observed_flowing_pairs": 274,
+    "all_well_interval_pairs": 364,
+    "per_well_watercut_rmse_pp": {
+      "PRO-1": 0.010468541640551868,
+      "PRO-4": 16.518199366135033,
+      "PRO-5": 1.9594617662866034,
+      "PRO-11": 3.429940516245923,
+      "PRO-12": 6.677681523780938,
+      "PRO-15": 0.6207477653453605,
+      "PRO-20": 5.727922982362276
+    }
+  },
+  "candidate": {
+    "watercut_rmse_pp": 2.0345541664312337,
+    "oil_rate_rmse_sm3_d": 12.095770136155558,
+    "water_rate_rmse_sm3_d": 2.4838848094817987,
+    "observed_flowing_pairs": 274,
+    "all_well_interval_pairs": 364,
+    "per_well_watercut_rmse_pp": {
+      "PRO-1": 0.014178370412392787,
+      "PRO-4": 3.021024903954505,
+      "PRO-5": 1.4960396307676933,
+      "PRO-11": 2.703678506701304,
+      "PRO-12": 1.760354971669246,
+      "PRO-15": 1.367205456162062,
+      "PRO-20": 2.3093223392224593
+    }
+  },
+  "reduction_pp": 5.198710876424316,
+  "relative_reduction_pct": 71.87225748846565,
+  "improved": true,
+  "changed": {
+    "boxes": 16,
+    "porosity_cells_changed": 44,
+    "permeability_cells_changed": 11
+  },
+  "candidate_data_sha256": "73c68b8b22c98b3ba45b82d0df14c06135a6f00af3d7bdd1ba20ec0ed3832cd3",
+  "response_sha256": "4ead5c832cd261f1729c9f858c8c990e1fd43f3fd732576a81ccb4614899ddeb",
+  "prompt_sha256": "2a89bab063ebf10302166d1ddf133f892636ff908a39ca45868e204777bb669f",
+  "history_checks_passed": true,
+  "candidate_report_snapshots": 53
+}

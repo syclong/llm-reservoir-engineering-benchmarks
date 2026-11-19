@@ -1,0 +1,19 @@
+{
+  "experiment": 2,
+  "model": "gpt-6-astra",
+  "input_messages": 1,
+  "attachments": 0,
+  "registered_tools": 0,
+  "returned_tool_calls": 0,
+  "formal_proposals": 1,
+  "baseline_simulations": 1,
+  "candidate_simulations": 1,
+  "prompt_sha256": "2a89bab063ebf10302166d1ddf133f892636ff908a39ca45868e204777bb669f",
+  "response_sha256": "4ead5c832cd261f1729c9f858c8c990e1fd43f3fd732576a81ccb4614899ddeb",
+  "prompt_utf8_bytes": 690591,
+  "summary_channels_in_prompt": 318,
+  "saved_times_per_channel": 86,
+  "well_interval_targets": 364,
+  "evidence_sha256": "598323f2b90e4aac43188bc2e87bf33c44775bb9e9a00eabccc8aa62664953e9",
+  "experiment_code_sha256": "c086fdd10f3bd1f6da269dca7e370b2fa93c089095559cea2fcea9b68265d00d"
+}

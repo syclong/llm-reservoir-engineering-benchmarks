@@ -6,3 +6,4 @@ dist/
 .env*
 *.local.*
 settings.toml
+experiments/02-history-matching/study/

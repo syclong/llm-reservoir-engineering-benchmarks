@@ -1,0 +1,63 @@
+{
+  "scope": "field",
+  "source": "native OPM field vectors verified against all seven wells",
+  "field_water_cut": "100 * sum(water rate) / sum(oil rate + water rate)",
+  "rmse": "unweighted over common report endpoints",
+  "flowing_report_endpoints": 52,
+  "saved_times": {
+    "baseline": 86,
+    "candidate": 83
+  },
+  "start": "1967-01-01",
+  "end": "1983-07-01",
+  "metrics": {
+    "FOPR": {
+      "baseline_rmse": 109.46560303148108,
+      "candidate_rmse": 33.653231536491575,
+      "relative_rmse_reduction_pct": 69.25679793056703,
+      "final_history": 558.7708740234375,
+      "final_baseline": 413.0783386230469,
+      "final_candidate": 511.146484375
+    },
+    "FWPR": {
+      "baseline_rmse": 26.807614273588346,
+      "candidate_rmse": 5.148140230245275,
+      "relative_rmse_reduction_pct": 80.79597767371125,
+      "final_history": 328.81707763671875,
+      "final_baseline": 294.9590759277344,
+      "final_candidate": 328.7709045410156
+    },
+    "FWCT": {
+      "baseline_rmse": 3.873738059193622,
+      "candidate_rmse": 1.2573579557702155,
+      "relative_rmse_reduction_pct": 67.54148224384707,
+      "final_history": 37.04614043235779,
+      "final_baseline": 41.658684611320496,
+      "final_candidate": 39.14324343204498
+    },
+    "FOPT": {
+      "baseline_rmse": 306366.76401416946,
+      "candidate_rmse": 96520.22001368017,
+      "relative_rmse_reduction_pct": 68.49520530588099,
+      "final_history": 3493793.5,
+      "final_baseline": 2872777.75,
+      "final_candidate": 3302565.5
+    },
+    "FWPT": {
+      "baseline_rmse": 73097.25361419267,
+      "candidate_rmse": 6794.829176231844,
+      "relative_rmse_reduction_pct": 90.70439881080218,
+      "final_history": 1078992.375,
+      "final_baseline": 937453.625,
+      "final_candidate": 1068782.75
+    },
+    "FLPR": {
+      "baseline_rmse": 127.63148862224197,
+      "candidate_rmse": 34.77645143288895,
+      "relative_rmse_reduction_pct": 72.7524517591276,
+      "final_history": 887.5880126953125,
+      "final_baseline": 708.0374145507812,
+      "final_candidate": 839.9174194335938
+    }
+  }
+}

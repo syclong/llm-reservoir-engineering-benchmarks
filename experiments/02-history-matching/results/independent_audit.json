@@ -1,0 +1,58 @@
+{
+  "validated": true,
+  "formal_proposals": 1,
+  "new_candidate_simulations": 1,
+  "existing_baseline_simulations": 1,
+  "target_wells": 7,
+  "target_intervals": 52,
+  "identical_target_pairs": 364,
+  "scored_flowing_pairs": 274,
+  "physical_deck_unchanged_outside_rock_arrays": true,
+  "unchanged_inactive_cells": 899,
+  "unique_changed_active_cells": 54,
+  "porosity_changed": 44,
+  "permeability_changed": 11,
+  "both_changed": 1,
+  "by_layer": [
+    {
+      "k": 1,
+      "porosity": 0,
+      "permeability": 1
+    },
+    {
+      "k": 2,
+      "porosity": 0,
+      "permeability": 1
+    },
+    {
+      "k": 3,
+      "porosity": 9,
+      "permeability": 2
+    },
+    {
+      "k": 4,
+      "porosity": 0,
+      "permeability": 5
+    },
+    {
+      "k": 5,
+      "porosity": 35,
+      "permeability": 2
+    }
+  ],
+  "improved_wells": 5,
+  "worsened_wells": 2,
+  "raw_model_reply_sha256": "4ead5c832cd261f1729c9f858c8c990e1fd43f3fd732576a81ccb4614899ddeb",
+  "independently_recomputed": [
+    {
+      "watercut_rmse_pp": 7.2332650428555505,
+      "oil_rate_rmse_sm3_d": 33.296246650787346,
+      "water_rate_rmse_sm3_d": 8.781358706999713
+    },
+    {
+      "watercut_rmse_pp": 2.0345541664312337,
+      "oil_rate_rmse_sm3_d": 12.095770136155558,
+      "water_rate_rmse_sm3_d": 2.4838848094817987
+    }
+  ]
+}
