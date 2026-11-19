@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-from deck import blind, REPORT_ONLY
+from deck import blind
 from reference import static_reference
 from score import evaluate, parse_answer
 
@@ -60,16 +60,20 @@ def prepare(source=None):
     freeze(PROMPT, prompt)
     freeze(TRUTH, reference)
     revision = json.loads(read(CORRECTION))
-    if digest(Path(__file__).read_bytes()) != revision["corrected_driver_sha256"]:
+    if digest(Path(__file__).read_bytes()) != revision["published_driver_sha256"]:
         raise ValueError("The documented scoring correction and the active driver differ")
     registered_paths = {p: ORIGINAL_DRIVER if p == "reproduce.py" else ROOT / p for p in CODE}
+    source_hashes = {p: digest(path.read_bytes()) for p, path in registered_paths.items()}
+    if source_hashes["reproduce.py"] != revision["published_registered_driver_sha256"]:
+        raise ValueError("Published registration driver checksum mismatch")
+    source_hashes["reproduce.py"] = revision["original_driver_sha256"]
     fields = dict(model="gpt-6-astra", reasoning_effort="max", messages=1, tools=0, attachments=0,
-                  previous_messages=0, original_sha256=ORIGINAL, removed_reporting_keywords=sorted(REPORT_ONLY),
+                  previous_messages=0, original_sha256=ORIGINAL,
                   masked_deck_sha256=digest(DECK.read_bytes()), prompt_utf8_bytes=len(prompt),
                   prompt_sha256=digest(prompt), reference_sha256=digest(reference),
-                  code_sha256={p: digest(path.read_bytes()) for p, path in registered_paths.items()},
+                  code_sha256=source_hashes,
                   primary="reservoir_pair_layers", secondary=["open_completion_pairs", "vertical_interfaces"],
-                  score_policy="Counts and labels exact; geometry/fluid depths +/-0.5 m; pressure +/-0.1 bar; rate +/-0.1 sm3/d; schedule +/-0.01 d. Missing, duplicate or unsupported scored claims receive zero. No resampling.")
+                  score_policy="Counts and labels exact; geometry/fluid depths +/-0.5 m; pressure +/-0.1 bar; rate +/-0.1 sm3/d; schedule +/-0.01 d. Missing, duplicate or unsupported scored claims receive zero. The first complete reply is scored.")
     if REGISTER.exists():
         registered = json.loads(read(REGISTER))
         if any(registered.get(k) != v for k, v in fields.items()):

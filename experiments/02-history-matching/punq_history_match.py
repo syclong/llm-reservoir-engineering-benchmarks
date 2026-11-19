@@ -167,7 +167,7 @@ def adapt_deck(expanded):
     # Save the reservoir state at each report period, in addition to the summary histories.
     if not re.search(r"(?im)^[ \t]*RPTRST[ \t]*$", mask_comments(text)):
         text = re.sub(r"(?im)^([ \t]*SCHEDULE[ \t]*\n)", lambda m:m[0]+"\nRPTRST\n 'BASIC=2' /\n", text, count=1)
-    require(not re.search(r"(?i)fip",text), "A forbidden grouping label remains in the working deck")
+    require(not re.search(r"(?i)fip",text), "Unexpected region entry in the cell-indexed working deck")
     return text
 
 
@@ -317,13 +317,13 @@ def targets_table(obs,edges):
                      for w,d,qo,qw in obs))
 
 
-TASK = """Perform a single-step history match for the supplied oil-water-gas reservoir. Your entire input is this one plain-text message. No tools or attachments are available. The seven producers are controlled by total surface liquid rate. Compare the recorded oil and water rates in the production schedule with the actual simulated well production curves, identify mismatches, and submit ONE update to the reservoir rock fields. The evaluator will rebuild the deck from the same initial state and run OPM Flow once with your edits.
+TASK = """Perform a single-step history match for the supplied oil-water-gas reservoir. The seven producers are controlled by total surface liquid rate. Compare the recorded oil and water rates in the production schedule with the actual simulated well production curves, identify mismatches, and submit ONE update to the reservoir rock fields. The evaluator will rebuild the deck from the same initial state and run OPM Flow once with your edits.
 
-The objective is to minimize the well-balanced water-cut RMSE in percentage points. For each observed producing interval, water cut = surface water rate / (surface oil rate + surface water rate). For each well, average the squared differences between simulated and observed water cut over its observed flowing intervals. Average those well means equally, take the square root, and multiply by 100. If an observed well is flowing but its simulated total production is zero, that sample contributes 1.0 squared error. Observed shut-in intervals are excluded from this primary score. Oil-rate and water-rate RMSE on all matched rows are also reported separately in standard cubic meters per day. The imposed liquid-rate sum is not a fitting objective.
+The objective is to minimize the well-balanced water-cut RMSE in percentage points. For each observed producing interval, water cut = surface water rate / (surface oil rate + surface water rate). For each well, average the squared differences between simulated and observed water cut over its observed flowing intervals. Average those well means equally, take the square root, and multiply by 100. If an observed well is flowing but its simulated total production is zero, that sample contributes 1.0 squared error. Observed shut-in intervals are excluded from this primary score. Oil-rate and water-rate RMSE on all matched rows are also reported separately in standard cubic meters per day. The schedule sets the total liquid rate.
 
-The grid has 19 x 28 x 5 logical cells. Coordinates are one-based; I varies fastest, followed by J and then K. ACTNUM selects active cells. The DATA arrays PORO, PERMX, PERMY and PERMZ are the actual starting cell properties. A deck entry n*value denotes n consecutive copies. Geometry, activity, wells, completions, controls, aquifers, initial conditions, fluids, and relative permeability stay fixed. Use only grid indices to locate edits.
+The grid has 19 x 28 x 5 logical cells. Coordinates are one-based; I varies fastest, followed by J and then K. ACTNUM selects active cells. The DATA arrays PORO, PERMX, PERMY and PERMZ are the actual starting cell properties. A deck entry n*value denotes n consecutive copies. Geometry, activity, wells, completions, controls, aquifers, initial conditions, fluids, and relative permeability stay fixed. Locate each edit by its grid indices.
 
-Return a single JSON object with an "edits" array. Each edit names inclusive ranges "i":[lo,hi], "j":[lo,hi], and "k":[lo,hi]. For a single cell use equal endpoints. An edit can assign "porosity" (an absolute fraction strictly between 0 and 1), "permeability_mD" (an object with absolute nonnegative "x", "y", and "z" values in mD), or both. Values are direct replacements, not multipliers. Each edit must contain at least one active cell. Inactive cells and unspecified properties keep their original values. Two edits must not assign the same property family to the same active cell. Include at least one effective porosity change and one effective permeability change across the full proposal. Choose the locations, extent and values yourself. The shape is {"edits":[{"i":[I1,I2],"j":[J1,J2],"k":[K1,K2],"porosity":PHI,"permeability_mD":{"x":KX,"y":KY,"z":KZ}}]}. Replace symbolic entries with numbers. Return only the JSON object, without explanations, predicted scores, or Markdown fences.
+Return a single JSON object with an "edits" array. Each edit names inclusive ranges "i":[lo,hi], "j":[lo,hi], and "k":[lo,hi]. For a single cell use equal endpoints. An edit can assign "porosity" (an absolute fraction strictly between 0 and 1), "permeability_mD" (an object with absolute nonnegative "x", "y", and "z" values in mD), or both. Supply absolute cell values. Each edit must contain at least one active cell. Inactive cells and unspecified properties keep their original values. Assign each property family once per edited active cell. Include at least one effective porosity change and one effective permeability change across the full proposal. Choose the locations, extent and values yourself. The shape is {"edits":[{"i":[I1,I2],"j":[J1,J2],"k":[K1,K2],"porosity":PHI,"permeability_mD":{"x":KX,"y":KY,"z":KZ}}]}. Replace symbolic entries with numbers. Use plain JSON for the response.
 
 The historical rates are supplied by the DATA schedule. During a completed baseline run the evaluator reads the WOPRH and WWPRH history vectors from OPM Flow and checks them against that schedule. The target table pairs each interval start with its end date and elapsed day. Compare the targets with computed surface WOPR and WWPR at the interval end. All saved summary series are inline, with their keyword, entity, and unit on the line above their values. TIME is in days from the start date. WOPR, WWPR and WGPR are forward surface rates in sm³/day. WBHP is simulated absolute pressure in bar. WOPRH and WWPRH repeat the entered oil and water targets over each control interval."""
 
@@ -376,8 +376,8 @@ def score(obs, edges, series):
     return stats,rows
 
 
-def assemble_prompt(deck, history_text, series=None, stats=None):
-    parts=[TASK,"[BEGIN COMPLETE WORKING DATA]",deck.rstrip("\n"),"[END COMPLETE WORKING DATA]",
+def assemble_prompt(deck, history_text, series=None, stats=None, *, task=TASK):
+    parts=[task,"[BEGIN COMPLETE WORKING DATA]",deck.rstrip("\n"),"[END COMPLETE WORKING DATA]",
            "[BEGIN SEVEN-WELL OIL AND WATER HISTORY]",history_text.rstrip("\n"),"[END SEVEN-WELL HISTORY]",
            "[BEGIN ALL SAVED SIMULATION SUMMARY SERIES]"]
     if series is None:

@@ -1,15 +1,6 @@
 {
-  "model": "gpt-6-astra",
-  "input_messages": 1,
-  "tools": [],
-  "attachments": [],
-  "sha256": "2a89bab063ebf10302166d1ddf133f892636ff908a39ca45868e204777bb669f",
-  "utf8_bytes": 690591,
-  "context_window": 1000000,
-  "reserved": 8704,
-  "data_sha256": "d06b190f2902e0cc63146b04501ca129112a697fcd7d8ad254ee24179372e3ee",
-  "history_source": "OPM WOPRH/WWPRH from DATA schedule",
-  "history_pairs": 364,
-  "summary_channels": 318,
-  "values_per_channel": 86
+  "edition": "Prompt for new runs",
+  "sha256": "923f43f6d37a0f5f299e00547ca279124c1e7864ffcd792e48673f35246cc2e5",
+  "utf8_bytes": 690391,
+  "data_sha256": "d06b190f2902e0cc63146b04501ca129112a697fcd7d8ad254ee24179372e3ee"
 }

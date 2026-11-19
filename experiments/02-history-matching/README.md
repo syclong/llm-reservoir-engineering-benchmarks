@@ -2,7 +2,7 @@
 
 Can a language model improve an existing history match by editing a reservoir's rock properties in one proposal? This experiment uses a seven-producer PUNQ-S3 tutorial case. The model received one English text message and returned one JSON edit set. Python applied the edits to the base DATA deck, and OPM Flow 2026.04 evaluated the candidate from the same initial state.
 
-[Exact model prompt](prompts/single_step.txt) · [Original JSON reply](results/edits.json) · [Starting DATA](inputs/BASE.DATA) · [Updated DATA](results/CANDIDATE.DATA) · [Offline replay program](reproduce.py)
+[Recorded model prompt](https://github.com/syclong/llm-reservoir-planning-benchmark/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/02-history-matching/prompts/single_step.txt) · [Prompt for new runs](prompts/single_step.txt) · [Original JSON reply](results/edits.json) · [Starting DATA](inputs/BASE.DATA) · [Updated DATA](results/CANDIDATE.DATA) · [Offline replay program](reproduce.py)
 
 ## Recorded results
 
@@ -25,13 +25,13 @@ Water-cut RMSE decreased at five wells and increased at two. The largest improve
 
 ## Model input and proposed changes
 
-The recorded model was `gpt-6-astra`. Its 690,591-byte UTF-8 input contained the complete working deck, the seven oil/water target histories, and all 318 native baseline summary series at all 86 saved times. The input consisted of one user message with zero tools and zero attachments. The [run record](evidence/run.json) ties the message and the returned text to their SHA-256 hashes. The numerical simulation and file handling are performed by the experiment harness.
+The recorded model was `gpt-6-astra`. Its 690,591-byte UTF-8 input contained the complete working deck, the seven oil/water target histories, and all 318 native baseline summary series at all 86 saved times. The deck and curves were supplied together in one text message. The offline replay reconstructs that message from the recorded task and numerical inputs. The prompt for new runs uses the same deck and curves with revised instructions. The [run record](evidence/run.json) ties the message and the returned text to their SHA-256 hashes. The numerical simulation and file handling are performed by the experiment harness.
 
 A proposal assigns absolute porosity fractions and/or permeability values in mD to inclusive, one-based I, J, K ranges. The three permeability components are specified separately. The harness checks bounds, activity, overlapping assignments, numeric validity, and effective changes. It also verifies the simulator-read properties against the native INIT file. The 16 accepted boxes changed porosity in 44 active cells and permeability in 11. One cell changed both, giving 54 distinct modified cells. Geometry, activity, wells, controls, aquifer inputs, and the remaining deck sections were held fixed. [Cell-by-cell changes](results/changed_cells.csv) · [Independent audit](results/independent_audit.json)
 
 ## History and scoring
 
-The local input was the seven-well `PUNQ_S3N.DATA` variant of Rock Flow Dynamics' version 25.1 *How to Use Assisted History Matching* tutorial. All needed includes were expanded. The reporting-region map, its declarations and dependent summary requests were removed. No region labels were provided to the model. The deck preserves the two Carter–Tracy aquifers, three-phase fluid properties, initial equilibrium, and the well schedule. It makes two dimension defaults explicit and adds aquifer and restart diagnostics.
+The local input was the seven-well `PUNQ_S3N.DATA` variant of Rock Flow Dynamics' version 25.1 *How to Use Assisted History Matching* tutorial. The working deck combines the source includes into one file. Edits use one-based grid coordinates. The deck preserves the two Carter–Tracy aquifers, three-phase fluid properties, initial equilibrium, and the well schedule. It makes two dimension defaults explicit and adds aquifer and restart diagnostics.
 
 The 19 × 28 × 5 grid has 1,761 active cells. The 6,025-day simulation spans January 1, 1967 through July 1, 1983. Each numerical run produced 53 restart snapshots. The baseline and candidate saved 86 and 83 adaptive summary times, respectively. Flow reports warnings for some original diagnostic requests. The required well, field, aquifer, and restart variables are present in the archived solver outputs.
 

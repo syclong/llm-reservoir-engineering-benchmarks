@@ -179,7 +179,7 @@ def verify(work, make_plots=False):
     work = Path(work).resolve()
     seed_inputs(work)
     manifest = load(ROOT / "evidence/run.json")
-    hm.require(hm.file_hash(ROOT / "punq_history_match.py") == manifest["experiment_code_sha256"], "Experiment script hash mismatch")
+    hm.require(hm.file_hash(ROOT / "punq_history_match.py") == manifest["publication_code_sha256"], "Experiment script hash mismatch")
     hm.require(manifest["model"] == hm.MODEL and manifest["input_messages"] == manifest["formal_proposals"] == 1
                and manifest["registered_tools"] == manifest["attachments"] == manifest["returned_tool_calls"] == 0,
                "Invalid experiment receipt")
@@ -194,8 +194,12 @@ def verify(work, make_plots=False):
     _, hist1, score1, qc1 = hm.matrices_and_curves(work/"candidate", candidate, edges, schedule)
     hm.require(hist0 == hist1 and len(hist0) == manifest["well_interval_targets"], "The two histories differ")
     hm.require(qc0["active_cells"] == qc1["active_cells"] == 1761 and qc0["restart_snapshots"] == qc1["restart_snapshots"] == 53, "Incomplete reservoir states")
-    msg = hm.assemble_prompt(deck, hm.target_plain_text(hist0,edges), sim0, score0).encode("utf-8")
-    hm.require(msg == (ROOT / "prompts/single_step.txt").read_bytes() and hm.sha(msg) == manifest["prompt_sha256"],
+    inputs = (deck, hm.target_plain_text(hist0, edges), sim0, score0)
+    current = hm.assemble_prompt(*inputs).encode("utf-8")
+    hm.require(current == (ROOT / "prompts/single_step.txt").read_bytes(), "Published prompt mismatch")
+    recorded_task = (ROOT / "evidence/recorded_task.txt").read_text(encoding="utf-8").rstrip("\n")
+    msg = hm.assemble_prompt(*inputs, task=recorded_task).encode("utf-8")
+    hm.require(hm.sha(msg) == manifest["prompt_sha256"],
                "The archived model message cannot be reconstructed")
     (work / "prompt.txt").write_bytes(msg)
     saved = load(RESULTS / "comparison.json")
@@ -226,7 +230,7 @@ def verify(work, make_plots=False):
     hm.write(work/"proposal/intent.json", hm.as_json({"mode":"offline_replay","model":hm.MODEL,
              "prompt_sha256":hm.sha(msg),"tools":[],"attachments":[]}))
     hm.verify_delivered_reply(work/"proposal",response.decode("utf-8"),hm.sha(msg))
-    original_receipt = (ROOT/"prompts/receipt.json").read_bytes()
+    original_receipt = (ROOT/"evidence/recorded_prompt_receipt.json").read_bytes()
     input_receipt = json.loads(original_receipt)
     hm.require(input_receipt["sha256"]==hm.sha(msg) and input_receipt["model"]==manifest["model"]
                and input_receipt["attachments"]==input_receipt["tools"]==[] and input_receipt["input_messages"]==1,

@@ -34,6 +34,12 @@ class RecordedStudyTests(unittest.TestCase):
             self.assertAlmostEqual(audit["well_balanced_after_pp"],2.0345541664312337)
             self.assertAlmostEqual(audit["field_after_pp"],1.2573579557702155)
             self.assertEqual(audit["changed_active_cells"],54)
-            self.assertEqual((work / "prompt.txt").read_bytes(), (ROOT / "prompts/single_step.txt").read_bytes())
+            recorded = (work / "prompt.txt").read_bytes()
+            published = (ROOT / "prompts/single_step.txt").read_bytes()
+            for payload, receipt in ((recorded, "evidence/recorded_prompt_receipt.json"),
+                                     (published, "prompts/receipt.json")):
+                self.assertEqual(replay.hm.sha(payload), replay.load(ROOT / receipt)["sha256"])
+            marker = b"[BEGIN COMPLETE WORKING DATA]"
+            self.assertEqual(recorded.split(marker, 1)[1], published.split(marker, 1)[1])
             self.assertEqual((work / "results/field_history_comparison.csv").read_bytes(),
                              (ROOT / "results/field_history_comparison.csv").read_bytes())

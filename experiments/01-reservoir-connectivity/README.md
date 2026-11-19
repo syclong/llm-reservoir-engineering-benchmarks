@@ -4,13 +4,13 @@ A language model receives one neutral text prompt containing a full numerical re
 
 ## What the model received
 
-The supplied source is the self-contained synthetic model ANTICLINE_3W_2L.DATA. Its title, author comments and reporting regions identify parts of the intended interpretation. Preparation replaced the title with “Case A”, removed comments and removed the reporting keywords REGDIMS, FIPNUM and RPR. The other 56 keyword blocks retained their original records, including COORD, ZCORN, ACTNUM, PORO, directional permeabilities and multipliers, PVT and relative permeabilities, contacts, well locations, completions and schedule. Deck repetition notation is present as supplied. The registered source digest identifies the exact original file. The blinded deck is bundled here.
+The synthetic case ANTICLINE_3W_2L.DATA is distributed as Case A. Its numerical deck contains the grid geometry, activity, porosity, directional permeabilities and face multipliers, fluid properties, equilibrium contacts, well completions, and operating schedule.
 
-The exact prompt is 119,187 UTF-8 bytes. One user message carries the instructions followed by the entire blinded deck. No source filename, preceding conversation, attachment, tools, reference map, simulated history, scoring results or follow-up correction enters the recorded trial. The requested model is gpt-6-astra at maximum reasoning effort. One retained reply counts as one trial. The reference, scoring code and prompt digests were fixed locally before dispatch. The registration file includes the local UTC timestamp. The registered deck reader retains its provisional experiment number in its module description so that its original checksum can be verified.
+The model received the task and the complete numerical deck in one 119,187-byte UTF-8 message. The trial used gpt-6-astra at maximum reasoning effort. The registration records the evaluation criteria, timestamps and artifact hashes.
 
 - [Exact text sent to the model](prompts/single_step.txt)
-- [Blinded numerical deck](inputs/CASE.DATA)
-- [Registration and hashes](protocol/registration.json)
+- [Numerical deck](inputs/CASE.DATA)
+- [Study metadata](protocol/registration.json) · [Registration at the time of the trial](https://github.com/syclong/llm-reservoir-planning-benchmark/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/01-reservoir-connectivity/protocol/registration.json)
 - [Transport recovery record](protocol/transport_recovery.json)
 - [Unedited visible reply](results/model_reply.json)
 - [Request and response receipt](results/receipt.json)
@@ -64,11 +64,11 @@ The first complete visible reply was valid JSON. The model correctly identified 
 | Controls and schedule (literal mode labels) | 7 / 10 |
 | Pairs in the layer without reservoir-quality cells | 3 / 3 |
 
-The original registered driver reported 6/7 for grid and structure even though the reply and the frozen JSON reference both give the crest as [10,14]. The driver had passed a Python tuple directly to an exact JSON-array comparison. Scoring the frozen JSON representation corrected that single item. The raw score, the historical driver and the correction record are bundled. The connectivity scores are identical under both implementations. [Initial machine score](results/score_registered.json) · [Correction record](protocol/scoring_correction.json) · [Historical driver](protocol/reproduce_registered.py)
+The original registered driver reported 6/7 for grid and structure even though the reply and the frozen JSON reference both give the crest as [10,14]. The driver had passed a Python tuple directly to an exact JSON-array comparison. Scoring the frozen JSON representation corrected that single item. The bundle includes both scores and the publication version of the driver. The connectivity scores are identical under both implementations. [Initial machine score](results/score_registered.json) · [Correction record](protocol/scoring_correction.json) · [Original registered driver](https://github.com/syclong/llm-reservoir-planning-benchmark/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/01-reservoir-connectivity/protocol/reproduce_registered.py)
 
 The control-mode field in the prompt permitted text. All three replies explicitly state ORAT in longer sentences, together with the correct rate target and BHP limit. The registered literal evaluator expects exactly the four-character label. The table keeps those three literal mismatches. Reading the replies establishes that the model correctly identified oil-rate control in each well. [Visible reply](results/model_reply.json) · [Item-by-item scores](results/score.json)
 
-Two transport attempts used the same request body and the same idempotency key. The first received a response identifier, then reached its 1,200-second idle read timeout before delivering an assistant answer. Before retransmission, the timeout, zero saved visible answer bytes and recovery policy were recorded. The service assigned a different response identifier to the second attempt. Each request contained one user message and no history, tools or attachments. The model saw no feedback, and only the first complete reply was eligible for scoring. For the successful response the service reported gpt-6-astra, maximum reasoning effort, 101,251 input tokens and 18,240 output tokens (including 15,382 reasoning tokens). The successful transport took 313.6 s. [Recovery record](protocol/transport_recovery.json) · [Successful receipt](results/receipt.json)
+The first request timed out. A second transmission of the same prompt returned the scored reply in 313.6 s. The service reported 101,251 input tokens and 18,240 output tokens, including 15,382 reasoning tokens. [Recovery record](protocol/transport_recovery.json) · [Successful receipt](results/receipt.json)
 
 ## Reproduction
 
@@ -91,7 +91,7 @@ To score a different visible JSON reply, run the scoring command against that fi
 python reproduce.py score --reply my_reply.json --out my_score.json
 ~~~
 
-To conduct an independent trial, pass a preconfigured text-only model executable to the command below. The executable must read one UTF-8 user prompt on standard input and emit only the visible answer on standard output. Configure the executable for the desired model and reasoning effort, with an empty conversation and all tools disabled. The driver sends the exact registered bytes once, creates a fresh results directory, saves the raw reply and scores it. Its local receipt records the requested adapter settings. The recorded study's own transport receipt also includes the model and tool count returned by the service.
+To conduct an independent trial, configure the model executable for a fresh text-only session. It reads one UTF-8 prompt from standard input and writes its reply to standard output. The driver saves the reply, receipt and scores in the named trial directory.
 
 ~~~sh
 python run_once.py my_trial -- my-text-only-model-command

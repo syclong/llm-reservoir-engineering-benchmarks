@@ -13,5 +13,5 @@
   "first_visible_answer_bytes": 0,
   "initial_read_timeout_s": 1200,
   "recovery_read_timeout_s": 3900,
-  "recovery_policy": "Retransmit the identical request body and idempotency key. Only the first complete visible reply is eligible. Record transport attempts and compare backend response identifiers. No answer or feedback is added to the prompt."
+  "recovery_policy": "Retransmit the same single-message request. Record both transport attempts and score the first complete reply."
 }

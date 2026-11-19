@@ -10,8 +10,8 @@ Every prompt contains the entire base DATA deck. Round 1 is ready to send. Round
 | 4 | [Round 4 template](round_4_template.txt) | Decisions and FOPT from rounds 1–3, plus round 3 feedback |
 | 5 | [Round 5 template](round_5_template.txt) | Decisions and FOPT from rounds 1–4, plus round 4 feedback |
 
-Feedback contains the complete accepted-substep production history and three final 50-row by 60-column fields: absolute reservoir pressure, oil saturation, and water saturation. When the preceding proposal has no valid simulation output, the prompt records its status. The LLM receives only its own history.
+Feedback contains the complete accepted-substep production history and three final 50-row by 60-column fields: absolute reservoir pressure, oil saturation, and water saturation. When the preceding proposal has no valid simulation output, the prompt records its status. The history table lists the proposals from the current arm.
 
-The [response example](../examples/output_format.json) is for experiment operators. The task specifies the output format and feasible ranges without supplying a proposed solution. The automatic workflow passes only the current prompt to a new local model process. For manual submission, use a fresh conversation with the same named model.
+The [response example](../examples/output_format.json) is for experiment operators. The task specifies the JSON fields and feasible ranges. Each round starts a new model process with the current prompt. For manual submission, use a fresh conversation with the same named model.
 
 Regenerate the review files with `python materialize_prompts.py`. To preview the exact next prompt for a study, use `python -m fopt5 prompt --arm llm --study runs/jutuldarcy_pso --output next_prompt.txt`.
