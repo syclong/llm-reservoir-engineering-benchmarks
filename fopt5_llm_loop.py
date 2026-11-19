@@ -1,0 +1,4932 @@
+# -*- coding: utf-8 -*-
+"""JutulDarcy reservoir planning benchmark with five LLM evaluations and five PSO generations (25 evaluations).
+
+This file includes the readable source, the complete DATA deck, and the Julia dependency lockfile.
+python fopt5_llm_loop.py preview --save round1.txt
+python fopt5_llm_loop.py pso25 run --workers 5
+python fopt5_llm_loop.py run --arm pso
+python fopt5_llm_loop.py run --arm llm
+python fopt5_llm_loop.py unpack FOPT5_local
+"""
+from pathlib import Path
+import sys
+import tempfile
+
+# UTF-8 source files captured when the release was built.
+FILES = {
+'fopt5/__init__.py': r'''"""Compare reservoir development plans under a five-proposal budget."""
+''',
+'fopt5/__main__.py': r'''"""Run or audit the five-round arms and export the exact prompt for the next round."""
+import argparse
+import csv
+import io
+from pathlib import Path
+from .design import ROOT, RULES, read_json, write, dump
+from .engine import Solver
+from .experiment import (directory, exclusive, file_sha, history, lock_study, prompt,
+                         register_model, round_once, score_finished, utc, verify_backend)
+from .settings import model_name, solver_settings
+
+ARMS=("pso","llm")
+
+
+def scoreboard(study):
+    data={arm:history(study,arm) for arm in ARMS}
+    rows=[];summary={}
+    for arm,records in data.items():
+        if not records: continue
+        best=None
+        for row in records:
+            score=row.get("fopt_sm3")
+            if score is not None and (best is None or score>best):best=score
+            rows.append([arm,row["round"],row["status"],row["simulator_calls"],score,best])
+        summary[arm]={"rounds":len(records),"successful":sum(r["status"]=="ok" for r in records),
+                      "actual_simulator_calls":sum(r["simulator_calls"] for r in records),
+                      "best_fopt_sm3":best,"round5_actual_sm3":records[-1].get("fopt_sm3") if len(records)==5 else None}
+    status="waiting_for_two_primary_arms";winner=None;delta=None;ratio=None
+    if all(len(data[a])==5 for a in ("pso","llm")):
+        if any(r['status'] not in ("ok","invalid","duplicate") for a in ("pso","llm") for r in data[a]):
+            status="incomplete_infrastructure_or_qc"
+        elif any(summary[a]["best_fopt_sm3"] is None for a in ("pso","llm")):
+            status="no_valid_score_in_one_arm"
+        else:
+            delta=summary["llm"]["best_fopt_sm3"]-summary["pso"]["best_fopt_sm3"]
+            denominator=summary["pso"]["best_fopt_sm3"]
+            ratio=delta/denominator if denominator else None
+            winner="tie" if abs(delta)<=read_json(RULES)["tie_tolerance_sm3"] else ("llm" if delta>0 else "pso")
+            status="complete"
+    result={"simulator":"JutulDarcy","status":status,"winner":winner,"delta_llm_minus_pso_sm3":delta,"relative_to_pso":ratio,"arms":summary}
+    buffer=io.StringIO();w=csv.writer(buffer,lineterminator="\n");w.writerow(["method","round","status","calls","FOPT_sm3","best_so_far_sm3"]);w.writerows(rows)
+    write(Path(study)/"rounds.csv",buffer.getvalue());write(Path(study)/"scoreboard.json",dump(result))
+    return result
+
+
+def build_cli():
+    cmd=argparse.ArgumentParser(description=__doc__)
+    sub=cmd.add_subparsers(dest="op",required=True)
+    for name in ("run","submit","prompt","preview","score","status","recover","audit"):
+        p=sub.add_parser(name)
+        p.add_argument("--study","--run-dir",dest="study",type=Path,default=Path("runs/jutuldarcy_pso"))
+        if name not in ("score","status"):
+            choices=ARMS if name in ("run","recover","audit") else ("llm",)
+            p.add_argument("--arm",choices=choices,default="llm")
+        if name in ("run","submit"):
+            p.add_argument("--seed",type=int,default=read_json(RULES)["PSO"]["seed"])
+            p.add_argument("--timeout","--sim-timeout",type=int,default=900)
+        if name=="run":
+            p.add_argument("--until",type=int,choices=range(1,6),default=5,help="Run through this registered round number")
+        if name in ("prompt","preview"):
+            p.add_argument("--output","--save",dest="output",type=Path,required=True)
+        if name=="submit":
+            p.add_argument("--response",type=Path,required=True)
+        if name=="recover":
+            p.add_argument("--round",type=int,choices=range(1,6),required=True)
+            p.add_argument("--abandon",action="store_true")
+            p.add_argument("--original-response",type=Path,help="Original response from the same request")
+    return cmd
+
+
+def recover(args,study):
+    folder=directory(study,args.arm,args.round)
+    if not folder.is_dir() or (folder/"record.json").exists():
+        raise ValueError("Only an existing, unsettled round can be recovered")
+    pending=folder/"prepared.json"
+    entry=read_json(pending) if pending.exists() else {"arm":args.arm,"round":args.round,"simulator":"JutulDarcy"}
+    if args.arm == "llm":
+        registered = model_name(study / "llm" / "model.json")
+        if registered != model_name() or entry.get("model", registered) != registered:
+            raise ValueError("Recovered round has a different registered model name")
+        entry["model"] = registered
+    entry["simulator_calls"]=int((folder/"launched.txt").exists())
+    if args.abandon:
+        entry.update(status="interrupted",reason="Interruption recorded")
+    elif (folder/"jutul/complete.toml").exists() and pending.exists():
+        score_finished(study,args.arm,args.round,entry)
+    elif args.original_response:
+        # Accept only the original response. Recovery must not request another proposal or dispatch a simulation twice.
+        if entry["simulator_calls"] or args.arm=="pso" or not (folder/"prompt.txt").is_file():
+            raise ValueError("This round cannot accept a recovered model response")
+        from .experiment import finish_proposal
+        plan_path=folder/"response.json.txt"
+        raw=args.original_response.read_text(encoding="utf-8-sig").strip()
+        if plan_path.exists() and plan_path.read_text(encoding="utf-8").strip()!=raw:
+            raise ValueError("Recovered text differs from the saved original response")
+        prev=[read_json(directory(study,args.arm,k)/"record.json") for k in range(1,args.round)]
+        if prompt(study,args.arm,prev)!=(folder/"prompt.txt").read_text(encoding="utf-8"):
+            raise ValueError("The original prompt differs from the history of this arm")
+        entry["prompt_sha256"]=file_sha(folder/"prompt.txt")
+        cfg=solver_settings()
+        lock_study(study,cfg,read_json(study/"study.json")["signature"]["seed"])
+        worker=Solver(cfg,study)
+        try:
+            return finish_proposal(study,args.arm,args.round,prev,worker,folder,entry,raw)
+        finally:
+            worker.close()
+    else:
+        raise ValueError("No complete simulation receipt is available. Record the interruption or supply the original response from the same request.")
+    entry["completed_utc"]=utc()
+    write(folder/"record.json",dump(entry))
+
+
+def main():
+    args=build_cli().parse_args()
+    study=args.study.resolve()
+    verify_backend(study)
+    if args.op in ("preview","prompt"):
+        rows=history(study,args.arm)
+        if len(rows)>=5:
+            raise ValueError("This arm has completed all five rounds")
+        write(args.output,prompt(study,args.arm,rows))
+        print(args.output.resolve())
+        return
+    if args.op=="audit":
+        from .audit import audit
+        print(dump(audit(study,args.arm)))
+        return
+    with exclusive(study):
+        if args.op in ("score","status"):
+            print(dump(scoreboard(study)))
+            return
+        if args.op=="recover":
+            recover(args,study)
+            return
+        cfg=solver_settings()
+        records=history(study,args.arm)
+        limit=args.until if args.op=="run" else min(5,len(records)+1)
+        if len(records)>=limit:
+            print(dump(scoreboard(study)))
+            return
+        selected = model_name() if args.arm == "llm" else None
+        lock_study(study, cfg, args.seed)
+        if selected is not None:
+            register_model(study, selected)
+        worker=Solver(cfg,study,args.timeout)
+        try:
+            for _ in range(len(records),limit):
+                row=round_once(study,args.arm,records,worker,args.seed,model=selected,manual=getattr(args,"response",None))
+                records.append(row)
+                scoreboard(study)
+                if row["status"]=="simulation_or_qc_failed":
+                    raise ValueError(row["reason"])
+        finally:
+            worker.close()
+
+
+if __name__=="__main__":
+    main()
+''',
+'fopt5/audit.py': r'''"""Audit a study by recomputing scores and fields from archived Julia outputs."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from .pso import propose
+from .design import ROOT, parse_plan, read_json, render
+from .engine import extract, file_sha, require
+from .experiment import directory, history, prompt, verify_backend
+from .settings import model_name
+
+
+def audit(study, arm):
+    study=Path(study)
+    verify_backend(study)
+    signature=read_json(study/"study.json")["signature"]
+    for name,expected in signature["files"].items():
+        require(file_sha(ROOT/name)==expected,"Registered source or base input has changed")
+    seen=[]
+    scores=[]
+    records=history(study,arm)
+    registered=model_name(study/"llm/model.json") if arm=="llm" and records else None
+    if registered is not None:
+        require(registered==model_name(), "The study and release model labels differ")
+    for row in records:
+        n=row["round"]
+        folder=directory(study,arm,n)
+        if arm.startswith("llm"):
+            require(row.get("model")==registered,"Round model name differs from the study registration")
+            require((folder/"prompt.txt").read_bytes()==prompt(study,arm,seen).encode(),"The prompt differs from the history available at that round")
+        if "response_sha256" in row:
+            response=folder/"response.json.txt"
+            require(file_sha(response)==row["response_sha256"],"Proposal hash mismatch")
+            if arm=="pso":
+                require(parse_plan(response.read_text(encoding="utf-8"))==propose(seen,signature["seed"],n),"The replayed particle proposal differs from its record")
+        if row["status"]=="ok":
+            plan=parse_plan(response.read_text(encoding="utf-8"))
+            deck=folder/"MODEL.DATA"
+            require(plan==row["plan"] and deck.read_bytes()==render(plan).encode() and file_sha(deck)==row["data_sha256"],"The DATA deck differs from the recorded plan")
+            import tomllib
+            with (folder/"jutul/complete.toml").open("rb") as handle:
+                require(tomllib.load(handle)["data_sha256"]==file_sha(deck),"The solver receipt refers to a different DATA deck")
+            with TemporaryDirectory() as work:
+                tmp=Path(work)
+                result=extract(folder/"jutul",plan,tmp)
+                require(result==read_json(folder/"verification.json") and result["fopt_sm3"]==row["fopt_sm3"],"Reintegrated oil production differs from the registered score")
+                for name in ("history.csv","feedback.txt"):
+                    require(file_sha(tmp/name)==file_sha(folder/name),"Recomputed production history or final fields differ from the archive")
+            scores.append(row["fopt_sm3"])
+        seen.append(row)
+    return {"simulator":"JutulDarcy","arm":arm,"rounds":len(seen),"verified":len(scores),
+            "best_sm3":max(scores) if scores else None}
+''',
+'fopt5/design.py': r'''"""Validate the 28 design variables and render a standalone DATA deck."""
+import hashlib
+import itertools
+import json
+import math
+import os
+from pathlib import Path
+import re
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+BASE = ROOT / "inputs" / "BASE.DATA"
+RULES = ROOT / "protocol.json"
+WELLS = ("INJ1", "INJ2", "PROD1", "PROD2")
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def dump(obj):
+    return json.dumps(obj, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+
+
+def write(path, text):
+    """Write a temporary file in the same directory and replace the destination atomically."""
+    path = Path(path)
+    path.parent.mkdir(exist_ok=True, parents=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
+        tmp.write(text.encode("utf-8"))
+        tmp_name = tmp.name
+    os.replace(tmp_name, path)
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+
+
+def parse_plan(raw):
+    def reject_duplicates(pairs):
+        result = {}
+        for k, v in pairs:
+            if k in result:
+                raise ValueError("Duplicate JSON key")
+            result[k] = v
+        return result
+    x = json.loads(raw, object_pairs_hook=reject_duplicates)
+    if not isinstance(x, dict) or set(x) != set(WELLS):
+        raise ValueError("The proposal must contain exactly the four specified well names")
+    for w in WELLS:
+        a = x[w]
+        if not isinstance(a, list) or len(a) != 7:
+            raise ValueError("Each well needs two grid coordinates and five BHP targets")
+        i, j, *bhp = a
+        if type(i) is not int or type(j) is not int or not (1 <= i <= 60 and 1 <= j <= 50):
+            raise ValueError("Well coordinates must be integers within the grid bounds")
+        low, high = (275, 450) if w.startswith("INJ") else (100, 250)
+        if any(type(v) not in (float, int) or not (low <= v <= high) for v in bhp):
+            raise ValueError("BHP targets must be finite numbers within the permitted range")
+    for w, other in itertools.combinations(WELLS, 2):
+        if 32 * math.dist(x[w][:2], x[other][:2]) < 250:
+            raise ValueError("The distance between any pair of well centers must be at least 250 m")
+    return {w: x[w] for w in WELLS}
+
+
+def canonical(plan):
+    """Sort wells of the same type with their full pressure schedules to identify physically equivalent plans."""
+    return tuple(tuple(v) for group in (WELLS[:2], WELLS[2:]) for v in sorted(plan[w] for w in group))
+
+
+def render(plan):
+    """Replace well locations, completion coordinates, and five BHP targets per well in the common template."""
+    parse_plan(dump(plan))
+    text = BASE.read_text(encoding="utf-8")
+    prefix, sched = text.split("\nSCHEDULE\n", 1)
+    active_kw = ""
+    change_period = {w: 0 for w in WELLS}
+    out = []
+    for line in sched.splitlines():
+        token = line.strip()
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", token):
+            active_kw = token
+        match = re.match(r"\s*'(INJ1|INJ2|PROD1|PROD2)'", line)
+        if match:
+            w = match[1]
+            i, j, *pressures = plan[w]
+            if active_kw in ("WELSPECS", "COMPDAT"):
+                pattern = (r"^(\s*'\w+'\s+'GROUP1'\s+)\d+\s+\d+"
+                           if active_kw == "WELSPECS" else r"^(\s*'\w+'\s+)\d+\s+\d+")
+                line, n = re.subn(pattern, lambda m: m[1] + f"{i} {j}", line)
+                if n != 1:
+                    raise ValueError("The well location record does not match the deck template")
+            elif active_kw in ("WCONINJE", "WCONPROD", "WELTARG"):
+                if active_kw == "WELTARG":
+                    change_period[w] += 1
+                p = pressures[change_period[w]]
+                line, n = re.subn(r"[-+\d.]+\s*/\s*$", lambda _: str(p)+" /", line)
+                if n != 1:
+                    raise ValueError("The BHP record does not match the deck template")
+        out.append(line)
+    if set(change_period.values()) != {4}:
+        raise ValueError("Each well must have five control periods")
+    return prefix + "\nSCHEDULE\n" + "\n".join(out) + "\n"
+''',
+'fopt5/engine.py': r'''"""Run JutulDarcy in batch mode and verify the raw numerical output."""
+import csv
+import hashlib
+import io
+import os
+from pathlib import Path
+import subprocess
+import time
+import tomllib
+import numpy as np
+from .design import ROOT, WELLS, write
+
+
+def file_sha(path):
+    with Path(path).open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+class Solver:
+    """Reuse the Julia process and build a fresh reservoir case for every feasible proposal."""
+    def __init__(self, config, study, timeout=900):
+        self.config, self.study, self.timeout = config, Path(study), timeout
+        self.proc = self.log = None
+
+    def start(self):
+        cfg = self.config
+        # The numerical worker only inherits system, locale, and numerical runtime settings.
+        system = {"PATH", "HOME", "USER", "USERNAME", "USERPROFILE", "SYSTEMROOT", "SYSTEMDRIVE",
+                  "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "APPDATA", "LOCALAPPDATA",
+                  "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "LANG", "TZ", "HOMEDRIVE",
+                  "HOMEPATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "JULIA_CPU_TARGET"}
+        env = {name: value for name, value in os.environ.items()
+               if name.upper() in system or name.upper().startswith(("LC_", "OMP_", "OPENBLAS_", "MSMPI_"))}
+        env["JULIA_LOAD_PATH"] = "@"+os.pathsep+"@stdlib"
+        if cfg["depot"]:
+            env["JULIA_DEPOT_PATH"] = cfg["depot"]
+        args = [cfg["exe"], "--startup-file=no", "-O1", f"--threads={cfg['threads']}",
+                "--compiled-modules="+("yes" if cfg["compiled_modules"] else "no"),
+                "--project="+str(cfg["project"]), str(ROOT/"solver/evaluate.jl"), "--worker"]
+        self.log = (self.study/"julia.log").open("ab")
+        try:
+            self.proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=self.log, stderr=self.log, env=env)
+        except BaseException:
+            self.log.close()
+            raise
+
+    def run(self, folder):
+        folder = Path(folder).resolve()
+        raw = folder/"jutul"
+        if raw.exists() or (folder/"launched.txt").exists():
+            raise ValueError("This round already has a solver dispatch record")
+        if self.proc is None:
+            self.start()
+        names = [str(folder/"MODEL.DATA"), str(raw)]
+        if any(any(c in v for c in "\t\r\n") for v in names):
+            raise ValueError("Solver paths cannot contain tabs or line breaks")
+        # Write the dispatch marker before sending the job, so an interruption cannot cause a duplicate evaluation.
+        write(folder/"launched.txt", "JutulDarcy worker\n")
+        self.proc.stdin.write(("\t".join(names)+"\n").encode("utf-8"))
+        self.proc.stdin.flush()
+        end = time.monotonic() + self.timeout
+        while time.monotonic() < end:
+            if (raw/"complete.toml").is_file():
+                return
+            if (raw/"error.txt").is_file():
+                raise RuntimeError("Julia failed to solve this case. See jutul/error.txt in the round directory.")
+            if self.proc.poll() is not None:
+                raise RuntimeError("The Julia process exited early. See julia.log in the study directory.")
+            time.sleep(0.25)
+        self.close(kill=True)
+        raise TimeoutError("The Julia simulation timed out")
+
+    def close(self, kill=False):
+        if self.proc is not None:
+            try:
+                if kill and self.proc.poll() is None:
+                    self.proc.kill()
+                self.proc.stdin.close()
+                try:
+                    self.proc.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    self.proc.wait()
+            finally:
+                self.log.close()
+                self.proc = None
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def field(raw, name):
+    values = np.loadtxt(raw/name, delimiter=",", skiprows=1, ndmin=2)
+    require(values.shape == (3000, 5) and np.isfinite(values).all(), "The grid field is incomplete or contains non-finite values")
+    cell, pv, pressure, so, sw = values.T
+    require(np.array_equal(cell,np.arange(1,3001)), "Grid indices or cell ordering are incorrect")
+    require(np.all(pv > 0) and np.all(pressure > 0), "Invalid pore volume or absolute pressure")
+    require(np.allclose(so+sw,1,rtol=0,atol=1e-7) and min(sw)>=-1e-7 and max(sw)<=1+1e-7,"Invalid oil or water saturation")
+    return pv, pressure/1e5, so, sw
+
+
+def extract(raw, plan, folder):
+    """Integrate surface oil rates over accepted substeps and cross-check against the change in reservoir oil inventory."""
+    raw, folder = Path(raw), Path(folder)
+    with (raw/"complete.toml").open("rb") as handle:
+        meta = tomllib.load(handle)
+    require((meta["simulator"],meta["version"],meta["jutul"]) == ("JutulDarcy","0.4.1","0.5.9"),"Unexpected simulator or package version")
+    require(meta["report_steps"]==100 and abs(meta["horizon_days"]-3650)<1e-7,"The simulation did not complete the ten-year horizon")
+    pv, p0, s0, sw0 = field(raw,"initial.csv")
+    pv1, p, so, sw = field(raw,"final.csv")
+    require(np.array_equal(pv,pv1) and np.allclose(p0,260) and np.allclose(sw0,.2) and np.allclose(s0,.8),"Initial state or pore volumes differ from the shared case")
+    series = np.genfromtxt(raw/"steps.csv", delimiter=",", names=True, ndmin=1)
+    require(len(series)>0 and all(np.isfinite(series[n]).all() for n in series.dtype.names),"Accepted substep history is incomplete")
+    sec, dt = series["time_s"],series["dt_s"]
+    days = sec/86400
+    require(min(dt)>0 and np.allclose(sec,np.cumsum(dt),rtol=0,atol=1e-5) and abs(days[-1]-3650)<1e-7,"The accepted substep timeline contains a gap")
+    require(all(np.any(np.isclose(days,x,rtol=0,atol=1e-7)) for x in 36.5*np.arange(1,101)),"A scheduled report time is missing")
+    require(set(meta["wells"])==set(WELLS) and set(meta["closure_day"]).issubset(WELLS[2:]),"Unexpected well names or closure records")
+    qo_field, qw_field, qi_field = (np.zeros(len(dt)) for _ in range(3))
+    well_cols = {}
+    well_cums = []
+    for w in WELLS:
+        i,j,*targets = plan[w]
+        declared = meta["wells"][w]
+        require(declared["ijk"]==[i,j,1] and np.allclose(declared["bhp_bar"], targets,rtol=0,atol=1e-7),"Simulated completion or BHP schedule differs from the plan")
+        qo, qw, bhp, opened = (series[w+"_"+k] for k in ("qo_m3s","qw_m3s","bhp_Pa","open_bhp"))
+        inj = w.startswith("INJ")
+        direction = 1 if inj else -1
+        require(min(direction*qo)>=-1e-7 and min(direction*qw)>=-1e-7, "Unexpected well flow direction")
+        period = np.minimum(4,np.floor((sec-dt+1e-4)/(730*86400)).astype(int))
+        flow = abs(qo)+abs(qw)>1e-7
+        require(np.all((opened==0)|(opened==1)) and np.all(opened[flow]==1), "Detected flow after well shut-in")
+        require(np.allclose(bhp[flow]/1e5,np.asarray(targets)[period][flow],rtol=0,atol=.05), "BHP for a flowing well differs from its target")
+        if inj:
+            require(np.max(np.abs(qo))<1e-7,"A water injector has nonzero oil flow")
+            qi_field += qw
+            well_cols[w+"_WWIR"]=qw*86400
+        else:
+            oil, water = -qo, -qw
+            liquid = oil+water
+            cut = np.divide(water,liquid,out=np.zeros_like(oil),where=liquid>1e-14)
+            crossings = np.flatnonzero((liquid>1e-14)&(cut>=.78))
+            event=meta["closure_day"].get(w)
+            require((event is not None)==bool(len(crossings)), "Economic shut-in event is inconsistent with the surface water cut")
+            if event is not None:
+                first=int(crossings[0])
+                require(abs(days[first]-event)<1e-7 and np.all(opened[first+1:]==0) and not np.any(flow[first+1:]), "Economic shut-in did not persist for the rest of the simulation")
+            opt=np.cumsum(oil*dt)
+            well_cums.append(float(opt[-1]))
+            qo_field+=oil
+            qw_field+=water
+            for key,v in (("WOPR",oil*86400),("WWPR",water*86400),("WOPT",opt),("WWCT",cut)):
+                well_cols[w+"_"+key]=v
+        well_cols[w+"_WBHP"]=bhp/1e5
+    opt = np.cumsum(qo_field*dt)
+    total = float(opt[-1])
+    stock_loss = float(np.dot(pv,s0-so))
+    injected, produced_water = float(np.dot(qi_field,dt)), float(np.dot(qw_field,dt))
+    require(abs(sum(well_cums)-total)<max(.01,abs(total)*1e-10) and np.all(np.diff(opt)>=-1e-5),"Field cumulative oil or the sum of well production totals is inconsistent")
+    require(abs(stock_loss-total)<max(2,abs(total)*2e-4),"Surface oil production differs from the change in reservoir oil inventory")
+    require(abs(injected-produced_water-total)<max(2,abs(injected)*2e-4),"Field injection and production volumes do not balance")
+    cols={"TIME":days,"FOPT":opt,"FOPR":qo_field*86400,"FWPR":qw_field*86400,"FWIR":qi_field*86400,"FPR":series["FPR_Pa"]/1e5,**well_cols}
+    buffer=io.StringIO()
+    writer=csv.writer(buffer,lineterminator="\n")
+    writer.writerow(cols)
+    for row in zip(*cols.values()):
+        writer.writerow([repr(float(x)) for x in row])
+    history=buffer.getvalue()
+    write(folder/"history.csv",history)
+    parts=["Surface rates are end-of-substep values for all accepted substeps. TIME is in days, rates in sm³/d, cumulative volumes in sm³, and absolute pressure in bar. Cumulative production starts at zero on day 0. FPR is weighted by hydrocarbon pore volume.",history]
+    for name,values in (("PRESSURE",p),("SOIL",so),("SWAT",sw)):
+        parts.append(name+" K=1. Rows run from J=1 to 50. Each row contains 60 values in order from I=1 to 60.")
+        parts.extend("J="+str(j)+" "+" ".join(repr(float(v)) for v in row) for j,row in enumerate(values.reshape(50,60),1))
+    write(folder/"feedback.txt","\n".join(parts)+"\n")
+    return {"simulator":"JutulDarcy","version":meta["version"],"fopt_sm3":total,"sum_well_wopt_sm3":sum(well_cums),
+            "inventory_loss_sm3":stock_loss,"injected_water_sm3":injected,"produced_water_sm3":produced_water,
+            "closure_day":meta["closure_day"],"active_cells":3000,"final_day":float(days[-1]),"accepted_steps":len(dt),
+            "raw_sha256":{name:file_sha(raw/name) for name in ("initial.csv","final.csv","steps.csv","complete.toml")}}
+''',
+'fopt5/experiment.py': r'''"""Manage proposals, per-arm context, recoverable records, and JutulDarcy scoring."""
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import os
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+import numpy as np
+from . import pso
+from .design import ROOT, BASE, RULES, WELLS, canonical, digest, dump, parse_plan, read_json, render, write
+from .engine import extract, file_sha
+from .settings import model_name, validate_model_name
+
+
+def utc():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def directory(study, arm, number):
+    return Path(study)/arm/f"r{number:02d}"
+
+
+@contextmanager
+def exclusive(study):
+    """The operating system releases this lock on process exit, preventing simultaneous dispatch of the same round."""
+    study.mkdir(parents=True,exist_ok=True)
+    with (study/".study.lock").open("a+b") as lock:
+        if not lock.seek(0,2):
+            lock.write(b"0")
+            lock.flush()
+        lock.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
+        else:
+            import fcntl
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        yield
+
+
+def verify_backend(study):
+    path=Path(study)/"study.json"
+    if path.exists() and read_json(path).get("signature",{}).get("simulator") != "JutulDarcy":
+        raise ValueError("This study belongs to a different simulator. Select a new directory for JutulDarcy.")
+
+
+def history(study, arm):
+    verify_backend(study)
+    records=[]
+    for number in range(1,6):
+        folder=directory(study,arm,number)
+        if not folder.exists():
+            if any(directory(study,arm,k).exists() for k in range(number+1,6)):
+                raise ValueError("The round sequence has a gap")
+            break
+        if not (folder/"record.json").exists():
+            raise RuntimeError(f"This round is unsettled. Inspect {folder} and use recover.")
+        row=read_json(folder/"record.json")
+        if row["round"]!=number or row["arm"]!=arm:
+            raise ValueError("Archived round or arm identifier mismatch")
+        if row.get("status")=="ok" and (folder/"verification.json").is_file():
+            v=read_json(folder/"verification.json")
+            if v.get("simulator")!="JutulDarcy" or row["fopt_sm3"]!=v["fopt_sm3"] or row["feedback_sha256"]!=file_sha(folder/"feedback.txt"):
+                raise ValueError("A previous score, simulator identifier, or feedback hash failed verification")
+        records.append(row)
+    return records
+
+
+def lock_study(study, config, seed):
+    verify_backend(study)
+    paths=[RULES,BASE,ROOT/"prompts/task.txt",ROOT/"model.json",ROOT/"solver/evaluate.jl",
+           ROOT/"solver/Project.toml",ROOT/"solver/Manifest.toml",*sorted((ROOT/"fopt5").glob("*.py"))]
+    signature={"protocol":read_json(RULES)["id"], "simulator":"JutulDarcy","seed":seed,
+               "files":{p.relative_to(ROOT).as_posix():file_sha(p) for p in paths},
+               "runtime_manifest_sha256":file_sha(config["project"]/"Manifest.toml"),
+               "julia_exe_sha256":file_sha(config["exe"]),"threads":config["threads"],
+               "python":sys.version.split()[0],"numpy":np.__version__,"platform":platform.system()}
+    path=Path(study)/"study.json"
+    if path.is_file():
+        if read_json(path)["signature"]!=signature:
+            raise ValueError("The registered source, dependencies, or simulator settings have changed. Select a new study directory.")
+    else:
+        if any(Path(study).glob("*/r[0-9][0-9]")):
+            raise ValueError("Unregistered rounds already exist in this directory")
+        write(path,dump({"locked_utc":utc(),"signature":signature}))
+
+def prompt(study,arm,records):
+    current=len(records)+1
+    head=(ROOT/"prompts/task.txt").read_text(encoding="utf-8")
+    parts=[head,f"\nProposal round {current}/5.\n[BEGIN SHARED BASE DATA]",BASE.read_text(encoding="utf-8"),
+           "[END SHARED BASE DATA]"]
+    if records:
+        parts.append("[HISTORY OF THIS ARM] Each row contains the round, status, INJ1, INJ2, PROD1, PROD2, and FOPT (sm³), in that order. NA means unavailable.")
+        for h in records:
+            p=h.get("plan") or {}
+            parts.append(" | ".join([str(h["round"]),h["status"],*[dump(p[w]) if w in p else "NA" for w in WELLS],str(h.get("fopt_sm3","NA"))]))
+        if arm=="llm":
+            last=records[-1];parts.append("[SIMULATION FEEDBACK FROM THE PRECEDING ROUND]")
+            if last["status"]=="ok":
+                path=directory(study,arm,last["round"])/"feedback.txt"
+                if file_sha(path)!=last["feedback_sha256"]:raise ValueError("The feedback file hash does not match the recorded hash")
+                parts.append(path.read_text(encoding="utf-8"))
+            else:
+                parts.append("No valid production history or grid fields are available for that round. Recorded status = "+last["status"])
+    parts.append(f"[END OF INPUT FOR ROUND {current}] Return only the JSON object containing the 28 decisions for the four wells.")
+    return "\n".join(parts)+"\n"
+
+
+def count_budget(text):
+    """Apply the fixed study length limit before a proposal is dispatched."""
+    limits = read_json(RULES)["LLM"]
+    window = limits["token_window"]
+    reserve = limits["reserved_output_and_overhead_tokens"]
+    size = len(text.encode("utf-8"))
+    if not 0 < reserve < window <= 1_000_000 or size + reserve > window:
+        raise ValueError("The complete prompt exceeds the study context budget")
+    return {"method": "utf8_byte_estimate", "input_count_or_upper_bound": size,
+            "reserved_tokens": reserve, "window": window}
+
+
+def register_model(study, name):
+    """Keep one model label throughout the five proposals."""
+    name = validate_model_name(name)
+    path = Path(study) / "llm" / "model.json"
+    if path.is_file():
+        if model_name(path) != name:
+            raise ValueError("The registered model name has changed")
+    else:
+        write(path, dump({"model": name}))
+
+
+def find_model_command():
+    executable = shutil.which("llm")
+    if executable is None:
+        raise FileNotFoundError("Automatic proposals require the llm command on PATH. Use preview and submit for manual proposals.")
+    return executable
+
+
+def model_request(name, text):
+    """Send the full prompt on stdin and collect a single text reply on stdout."""
+    name = validate_model_name(name)
+    executable = find_model_command()
+    with tempfile.TemporaryDirectory(prefix="fopt5-model-") as working_dir:
+        try:
+            result = subprocess.run(
+                [executable, "prompt", "--model", name, "--no-stream", "--no-log"],
+                input=text.encode("utf-8"),
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                cwd=working_dir, shell=False, timeout=900, check=False,
+                env=dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8"),
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("The local model command timed out") from None
+        except OSError:
+            raise RuntimeError("Could not launch the local model command") from None
+    if result.returncode:
+        raise RuntimeError(f"The local model command exited with code {result.returncode}")
+    try:
+        return result.stdout.decode("utf-8-sig").strip()
+    except UnicodeDecodeError:
+        raise ValueError("The local model command must return UTF-8 text") from None
+
+
+def score_finished(study,arm,number,entry):
+    folder=directory(study,arm,number)
+    raw=folder/"jutul"
+    import tomllib
+    with (raw/"complete.toml").open("rb") as handle:
+        check=tomllib.load(handle)
+    if check["data_sha256"]!=entry["data_sha256"] or file_sha(folder/"MODEL.DATA")!=entry["data_sha256"]:
+        raise ValueError("The input DATA hash differs from the solver receipt")
+    evidence=extract(raw,entry["plan"],folder)
+    entry.update(status="ok",fopt_sm3=evidence["fopt_sm3"],feedback_sha256=file_sha(folder/"feedback.txt"))
+    write(folder/"verification.json",dump(evidence))
+
+
+def round_once(study, arm, records, solver, seed, model=None, manual=None):
+    number = len(records) + 1
+    if number > 5:
+        raise ValueError("The five-round proposal budget is exhausted")
+    if arm not in ("llm", "pso"):
+        raise ValueError("Unknown study arm")
+
+    if arm == "llm":
+        name = model_name() if model is None else validate_model_name(model)
+        text = prompt(study, arm, records)
+        budget = count_budget(text)
+        # An unavailable local client or missing manual file consumes no round.
+        if manual is None:
+            find_model_command()
+        else:
+            raw = Path(manual).read_text(encoding="utf-8-sig").strip()
+
+    folder = directory(study, arm, number)
+    folder.mkdir(parents=True, exist_ok=False)
+    entry = {"round": number, "arm": arm, "proposed_utc": utc(),
+             "simulator_calls": 0, "simulator": "JutulDarcy"}
+    start = time.monotonic()
+    if arm == "llm":
+        entry["model"] = name
+        entry["context_accounting"] = budget
+        write(folder / "prompt.txt", text)
+        entry["prompt_sha256"] = file_sha(folder / "prompt.txt")
+        if manual is None:
+            write(folder / "model_intent.json", dump({"utc": utc(), "model": name, "prompt_sha256": entry["prompt_sha256"]}))
+            try:
+                raw = model_request(name, text)
+            except (OSError, RuntimeError, ValueError) as exc:
+                write(folder / "model_error.json", dump({"error": str(exc), "utc": utc()}))
+                raise
+    else:
+        entry["particle_id"] = (number - 1) % pso.N_PARTICLES + 1
+        raw = dump(pso.propose(records, seed, number))
+    entry["proposal_seconds"] = time.monotonic() - start
+    return finish_proposal(study, arm, number, records, solver, folder, entry, raw)
+
+
+def finish_proposal(study,arm,number,records,solver,folder,entry,raw):
+    write(folder/"response.json.txt",raw)
+    entry["response_sha256"]=file_sha(folder/"response.json.txt")
+    try:
+        plan=parse_plan(raw)
+    except (ValueError,OverflowError,TypeError) as exc:
+        entry.update(status="invalid",reason=str(exc))
+    else:
+        entry["plan"]=plan
+        if any(h.get("plan") and canonical(h["plan"])==canonical(plan) for h in records):
+            entry.update(status="duplicate")
+        else:
+            write(folder/"MODEL.DATA",render(plan))
+            entry["data_sha256"]=file_sha(folder/"MODEL.DATA")
+            write(folder/"prepared.json",dump(entry))
+            begin=time.monotonic()
+            try:
+                solver.run(folder)
+                score_finished(study,arm,number,entry)
+            except Exception as exc:
+                entry.update(status="simulation_or_qc_failed",reason=str(exc))
+            entry["simulator_calls"]=int((folder/"launched.txt").is_file())
+            entry["simulation_and_verification_seconds"]=time.monotonic()-begin
+    entry["completed_utc"]=utc()
+    write(folder/"record.json",dump(entry))
+    print(f'{arm} {number}/5 {entry["status"]} {entry.get("fopt_sm3","")}',flush=True)
+    return entry
+''',
+'fopt5/pso.py': r'''"""Asynchronous two-particle PSO. Replay its trajectory from the seed and this arm's own observations."""
+from dataclasses import dataclass
+import math
+import numpy as np
+from .design import WELLS, dump, parse_plan
+
+N_PARTICLES = 2
+INERTIA = 0.7298
+COGNITIVE = 1.49618
+SOCIAL = 1.49618
+SPEED_LIMIT = 0.25
+SHAPE = (4, 7)
+
+
+@dataclass
+class Particle:
+    position: np.ndarray
+    velocity: np.ndarray
+    best: np.ndarray | None = None
+    best_score: float = -math.inf
+
+
+def position_to_plan(position):
+    """Map normalized coordinates to grid cells and bar. Resolve spacing conflicts at the nearest feasible cell."""
+    plan = {}
+    placed = []
+    for w, row in zip(WELLS, position):
+        i = min(60, 1+int(row[0]*60))
+        j = min(50, 1+int(row[1]*50))
+        def feasible(cell):
+            return all(32**2*((cell[0]-x)**2+(cell[1]-y)**2) >= 250**2 for x,y in placed)
+        if not feasible((i,j)):
+            cells = ((x,y) for x in range(1,61) for y in range(1,51))
+            i,j = min(filter(feasible,cells),key=lambda xy:((xy[0]-i)**2+(xy[1]-j)**2,xy))
+        placed.append((i,j))
+        low,high=(275,450) if w.startswith("INJ") else (100,250)
+        pressures=np.round(low+(high-low)*row[2:],2).tolist()
+        plan[w]=[i,j,*pressures]
+    return parse_plan(dump(plan))
+
+
+def realized_position(plan):
+    result=np.empty(SHAPE)
+    for n,w in enumerate(WELLS):
+        i,j,*p=plan[w]
+        low,high=(275,450) if w.startswith("INJ") else (100,250)
+        result[n,:2]=[(i-.5)/60,(j-.5)/50]
+        result[n,2:]=(np.asarray(p)-low)/(high-low)
+    return result
+
+
+def advance(particle, leader, rng):
+    personal=particle.position if particle.best is None else particle.best
+    velocity=(INERTIA*particle.velocity
+              + COGNITIVE*rng.random(SHAPE)*(personal-particle.position)
+              + SOCIAL*rng.random(SHAPE)*(leader-particle.position))
+    velocity=np.clip(velocity,-SPEED_LIMIT,SPEED_LIMIT)
+    next_position=particle.position+velocity
+    outside=(next_position<0)|(next_position>1)
+    # The speed bound permits at most one boundary crossing per step. Reflect both position and velocity.
+    particle.position=np.where(next_position<0,-next_position,np.where(next_position>1,2-next_position,next_position))
+    particle.velocity=np.where(outside,-velocity,velocity)
+
+
+def propose(history,seed,round_no):
+    if round_no!=len(history)+1 or not (1<=round_no<=5):
+        raise ValueError("The particle-swarm round does not match the number of observations")
+    rng=np.random.default_rng(seed)
+    swarm=[Particle(rng.random(SHAPE),rng.uniform(-.1,.1,SHAPE)) for _ in range(N_PARTICLES)]
+    for step in range(round_no):
+        particle=swarm[step%N_PARTICLES]
+        if step>=N_PARTICLES:
+            best=max(swarm,key=lambda p:p.best_score)
+            leader=best.best if best.best is not None else particle.position
+            advance(particle,leader,rng)
+        plan=position_to_plan(particle.position)
+        particle.position=realized_position(plan)
+        if step==round_no-1:
+            return plan
+        row=history[step]
+        if row.get("plan")!=plan:
+            raise ValueError("The saved proposal differs from the fixed-seed particle trajectory")
+        if row["status"]=="ok" and row["fopt_sm3"]>particle.best_score:
+            particle.best_score=row["fopt_sm3"]
+            particle.best=particle.position.copy()
+''',
+'fopt5/settings.py': r'''"""Read the model label and locate the Julia simulator."""
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import tomllib
+
+from .design import ROOT
+
+
+def validate_model_name(name):
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:+-]*(?:/[A-Za-z0-9][A-Za-z0-9._:+-]*)*", name):
+        raise ValueError("Invalid model name")
+    return name
+
+
+def model_name(path=None):
+    """The model selection file contains one field and a single text value."""
+    def single_field(pairs):
+        if len(pairs) != 1 or pairs[0][0] != "model":
+            raise ValueError("Expected exactly one field named model")
+        return dict(pairs)
+
+    source = ROOT / "model.json" if path is None else Path(path)
+    with source.open(encoding="utf-8-sig") as stream:
+        value = json.load(stream, object_pairs_hook=single_field)
+    if not isinstance(value, dict):
+        raise ValueError("Expected an object containing the model name")
+    return validate_model_name(value["model"])
+
+
+def local_julia_settings():
+    """Read only the Julia section of the optional machine settings file."""
+    override = os.getenv("FOPT5_CONFIG")
+    if override:
+        path = Path(override).expanduser()
+    else:
+        base = os.getenv("LOCALAPPDATA") if os.name == "nt" else os.getenv("XDG_CONFIG_HOME")
+        path = Path(base or Path.home() / ".config") / "FOPT5" / "settings.toml"
+    if not path.is_file():
+        if override:
+            raise ValueError("The specified Julia settings file does not exist")
+        return {}
+    with path.open("rb") as stream:
+        section = tomllib.load(stream).get("julia", {})
+    if not isinstance(section, dict):
+        raise ValueError("Expected a table of Julia settings")
+    return section
+
+
+def solver_settings():
+    local = local_julia_settings()
+    executable = os.getenv("FOPT5_JULIA") or local.get("executable") or shutil.which("julia")
+    if not executable or not (resolved := shutil.which(str(executable))):
+        raise ValueError("Julia was not found. Set FOPT5_JULIA or add Julia to PATH.")
+    project = Path(os.getenv("FOPT5_JULIA_PROJECT") or local.get("project") or ROOT / "solver").resolve()
+    if not (project / "Project.toml").is_file() or not (project / "Manifest.toml").is_file():
+        raise ValueError("The Julia environment is missing. Run Pkg.instantiate() as described in the README.")
+    threads = int(os.getenv("FOPT5_JULIA_THREADS") or local.get("threads", 2))
+    if threads < 1:
+        raise ValueError("The Julia thread count must be a positive integer")
+    depot = os.getenv("FOPT5_JULIA_DEPOT") or local.get("depot") or os.getenv("JULIA_DEPOT_PATH")
+    modules = local.get("compiled_modules", True)
+    if type(modules) is not bool:
+        raise ValueError("compiled_modules must be a Boolean")
+    return {"exe": str(Path(resolved).resolve()), "project": project, "depot": depot,
+            "threads": threads, "compiled_modules": modules}
+''',
+'model.json': r'''{
+  "model": "gpt-6-astra"
+}
+''',
+'solver/evaluate.jl': r'''# Each worker receives a Python-validated DATA deck and an empty output directory.
+using Jutul, JutulDarcy, LinearAlgebra, SHA, TOML
+
+const WELLS = (:INJ1, :INJ2, :PROD1, :PROD2)
+const PRODUCERS = (:PROD1, :PROD2)
+const DAY = 86400.0
+
+function watercut_limits(deck)
+    # This reader skips WECON. Apply the whole-well permanent shut-in form used by this benchmark.
+    block = match(r"(?ms)^WECON\s*\n(.*?)^\s*/\s*$", deck)
+    isnothing(block) && error("The DATA deck has no economic shut-in records")
+    limits = Dict{Symbol, Float64}()
+    for line in split(strip(block.captures[1]), '\n')
+        rec = match(r"^\s*'(PROD[12])'\s+2\*\s+([0-9.]+)\s+2\*\s+'WELL'\s+'NO'\s*/\s*$", line)
+        isnothing(rec) && error("Unrecognized WECON record")
+        key = Symbol(rec.captures[1])
+        haskey(limits, key) && error("Duplicate economic limit")
+        limits[key] = parse(Float64, rec.captures[2])
+    end
+    @assert Set(keys(limits)) == Set(PRODUCERS) && all(==(0.78), values(limits))
+    return limits
+end
+
+facility(forces, w) = haskey(forces, :Facility) ? :Facility : Symbol(w, "_ctrl")
+
+function describe_case(case, mesh)
+    model = case.model
+    @assert Set(JutulDarcy.well_symbols(model)) == Set(WELLS)
+    @assert length(case.dt) == 100 && all(t -> isapprox(t, 36.5*DAY), case.dt)
+    @assert sort(mesh.cell_map) == collect(1:3000)
+    wells = Dict{String, Any}()
+    for w in WELLS
+        perf = only(Jutul.physical_representation(model[w]).perforations.reservoir)
+        cart = CartesianIndices((60, 50, 1))[mesh.cell_map[perf]]
+        targets = Float64[]
+        for (index, f) in enumerate(case.forces)
+            ctrl = f[facility(f, w)].control[w]
+            @assert ctrl.target isa BottomHolePressureTarget
+            target = ctrl.target.value / 1e5
+            if mod1(index, 20) == 1
+                push!(targets, target)
+            else
+                @assert target == last(targets)
+            end
+        end
+        wells[String(w)] = Dict("ijk" => collect(Tuple(cart)), "bhp_bar" => targets)
+    end
+    return wells
+end
+
+function write_cells(path, state, order, pv, water, oil)
+    open(path, "w") do io
+        println(io, "cell,PV_m3,PRESSURE_Pa,SOIL,SWAT")
+        for (cart, ix) in enumerate(order)
+            println(io, join((cart, pv[ix], state[:Pressure][ix],
+                state[:Saturations][oil, ix], state[:Saturations][water, ix]), ','))
+        end
+    end
+end
+
+function evaluate(deck, out)
+    @assert pkgversion(JutulDarcy) == v"0.4.1" && pkgversion(Jutul) == v"0.5.9"
+    mkpath(out)
+    isempty(readdir(out)) || error("The solver output directory must be empty")
+    limits = watercut_limits(read(deck, String))
+    case = setup_case_from_data_file(deck; simple_well = true)
+    model = case.model
+    mesh = Jutul.physical_representation(JutulDarcy.reservoir_domain(case))
+    order = sortperm(mesh.cell_map)
+    phases = JutulDarcy.get_phases(model[:Reservoir].system)
+    @assert length(phases) == 2
+    water = only(findall(p -> p isa AqueousPhase, phases))
+    oil = only(findall(p -> p isa LiquidPhase, phases))
+    pv = pore_volume(JutulDarcy.reservoir_domain(model))
+    wells = describe_case(case, mesh)
+    write_cells(joinpath(out, "initial.csv"), case.state0[:Reservoir], order, pv, water, oil)
+
+    # Count only converged, accepted substeps. Record the end-of-step surface rates before applying new shut-ins to later substeps.
+    elapsed = Ref(0.0)
+    events = Dict{String, Float64}()
+    open(joinpath(out, "steps.csv"), "w") do io
+        names = [string(w, "_", k) for w in WELLS for k in ("qo_m3s", "qw_m3s", "bhp_Pa", "open_bhp")]
+        println(io, join(["time_s", "dt_s", "FPR_Pa", names...], ','))
+        function after_ministep(done, report, sim, dt, f, max_iter, config)
+            done || return (done, report)
+            elapsed[] += dt
+            state = sim.storage.state
+            p = state[:Reservoir][:Pressure]
+            sw = state[:Reservoir][:Saturations]
+            # FPR is the hydrocarbon-pore-volume-weighted pressure in Pa.
+            hc = sum(i -> pv[i]*(1.0-Jutul.value(sw[water, i])), eachindex(pv))
+            hp = sum(i -> pv[i]*(1.0-Jutul.value(sw[water, i]))*Jutul.value(p[i]), eachindex(pv))
+            row = Float64[elapsed[], dt, hp/hc]
+            to_close = Symbol[]
+            for w in WELLS
+                key = facility(f, w)
+                group = state[key]
+                values = JutulDarcy.FacilityVariablesForWell(model[key], group, w; drop_ad = true)
+                qo, qw = values.surface_liquid_rate, values.surface_aqueous_rate
+                ctrl = group.WellGroupConfiguration.operating_controls[w]
+                append!(row, (qo, qw, values.bottom_hole_pressure, ctrl isa JutulDarcy.DisabledControl ? 0.0 : 1.0))
+                if w in PRODUCERS && !haskey(events, String(w)) && qo+qw < -1e-14
+                    qw/(qw+qo) >= limits[w] && push!(to_close, w)
+                end
+            end
+            println(io, join(row, ','))
+            for w in to_close
+                events[String(w)] = elapsed[]/DAY
+                key = facility(f, w)
+                closed = DisabledControl()
+                # Controls can share a dictionary within a BHP period. The original targets for all five periods are already captured.
+                for future in case.forces
+                    future[facility(future,w)].control[w] = closed
+                end
+                f[key].control[w] = closed
+                cfg = state[key].WellGroupConfiguration
+                cfg.operating_controls[w] = closed
+                cfg.requested_controls[w] = closed
+            end
+            return (done, report)
+        end
+        sim, cfg = setup_reservoir_simulator(case; info_level = -1, post_ministep_hook = after_ministep)
+        result = Jutul.simulate!(sim, case.dt; forces = case.forces, config = cfg)
+        @assert length(result.states) == length(case.dt) && isapprox(elapsed[], sum(case.dt); atol=1e-5)
+        write_cells(joinpath(out, "final.csv"), last(result.states)[:Reservoir], order, pv, water, oil)
+    end
+    record = Dict("simulator"=>"JutulDarcy", "version"=>string(pkgversion(JutulDarcy)),
+        "jutul"=>string(pkgversion(Jutul)), "julia"=>string(VERSION), "wells"=>wells,
+        "closure_day"=>events, "horizon_days"=>elapsed[]/DAY, "report_steps"=>length(case.dt),
+        "data_sha256"=>bytes2hex(sha256(read(deck))))
+    open(joinpath(out, "complete.tmp"), "w") do io
+        TOML.print(io, record)
+    end
+    mv(joinpath(out, "complete.tmp"), joinpath(out, "complete.toml"))
+end
+
+function run_worker()
+    # Reuse the loaded Julia libraries and rebuild the full reservoir initial state from the DATA deck for each plan.
+    for job in eachline(stdin)
+        deck, out = split(job, '\t'; limit=2)
+        try
+            evaluate(String(deck), String(out))
+        catch err
+            mkpath(out)
+            open(joinpath(out, "error.tmp"), "w") do io
+                showerror(io, err, catch_backtrace())
+            end
+            mv(joinpath(out, "error.tmp"), joinpath(out, "error.txt"))
+        end
+    end
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    BLAS.set_num_threads(1)
+    if ARGS == ["--worker"]
+        run_worker()
+    else
+        length(ARGS) == 2 || error("Expected a model path and a results directory")
+        evaluate(abspath(ARGS[1]), abspath(ARGS[2]))
+    end
+end
+''',
+'solver/Project.toml': r'''[deps]
+Jutul = "2b460a1a-8a2b-45b2-b125-b5c536396eb9"
+JutulDarcy = "82210473-ab04-4dce-b31b-11573c4f8e0a"
+
+[compat]
+julia = "1.10"
+Jutul = "=0.5.9"
+JutulDarcy = "=0.4.1"
+''',
+'solver/Manifest.toml': r'''# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.10.9"
+manifest_format = "2.0"
+project_hash = "07f677d18c2ac1bd9761a741c5499768ab4c9d21"
+
+[[deps.ADTypes]]
+deps = ["PrecompileTools"]
+git-tree-sha1 = "629de23e1c16911b439dabd2303c08af9575b226"
+uuid = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
+version = "1.24.0"
+
+    [deps.ADTypes.extensions]
+    ADTypesChainRulesCoreExt = "ChainRulesCore"
+    ADTypesConstructionBaseExt = "ConstructionBase"
+    ADTypesEnzymeCoreExt = "EnzymeCore"
+
+    [deps.ADTypes.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
+    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+
+[[deps.Accessors]]
+deps = ["CompositionsBase", "ConstructionBase", "Dates", "InverseFunctions", "MacroTools"]
+git-tree-sha1 = "8c0bc12397dabf5d2dfc4b5763ec463854cc44d3"
+uuid = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
+version = "0.1.46"
+
+    [deps.Accessors.extensions]
+    AxisKeysExt = "AxisKeys"
+    IntervalSetsExt = "IntervalSets"
+    LinearAlgebraExt = "LinearAlgebra"
+    StaticArraysExt = "StaticArrays"
+    StructArraysExt = "StructArrays"
+    TestExt = "Test"
+    UnitfulExt = "Unitful"
+
+    [deps.Accessors.weakdeps]
+    AxisKeys = "94b1ba4f-4ee9-5380-92f1-94cde586c3c5"
+    IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
+    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+    Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+    Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.Adapt]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "eec8a0ad4e4b673afba213931504c360fffb8f97"
+uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+version = "4.8.0"
+weakdeps = ["SparseArrays", "StaticArrays"]
+
+    [deps.Adapt.extensions]
+    AdaptSparseArraysExt = "SparseArrays"
+    AdaptStaticArraysExt = "StaticArrays"
+
+[[deps.ArgCheck]]
+git-tree-sha1 = "f9e9a66c9b7be1ad7372bbd9b062d9230c30c5ce"
+uuid = "dce04be8-c92d-5529-be00-80e4d2c0e197"
+version = "2.5.0"
+
+[[deps.ArgTools]]
+uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
+version = "1.1.1"
+
+[[deps.ArnoldiMethod]]
+deps = ["LinearAlgebra", "Random", "StaticArrays"]
+git-tree-sha1 = "d57bd3762d308bded22c3b82d033bff85f6195c6"
+uuid = "ec485272-7323-5ecc-a04f-4719b315124d"
+version = "0.4.0"
+
+[[deps.ArrayInterface]]
+deps = ["Adapt", "LinearAlgebra"]
+git-tree-sha1 = "1aec1ff0dcaa83a484e7f72097562fa3102c6722"
+uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
+version = "7.30.2"
+
+    [deps.ArrayInterface.extensions]
+    ArrayInterfaceAMDGPUExt = "AMDGPU"
+    ArrayInterfaceBandedMatricesExt = "BandedMatrices"
+    ArrayInterfaceBlockBandedMatricesExt = "BlockBandedMatrices"
+    ArrayInterfaceCUDAExt = "CUDA"
+    ArrayInterfaceCUDSSExt = ["CUDSS", "CUDA"]
+    ArrayInterfaceChainRulesCoreExt = "ChainRulesCore"
+    ArrayInterfaceChainRulesExt = "ChainRules"
+    ArrayInterfaceFillArraysExt = "FillArrays"
+    ArrayInterfaceGPUArraysCoreExt = "GPUArraysCore"
+    ArrayInterfaceGPUArraysCoreTrackerExt = ["GPUArraysCore", "Tracker"]
+    ArrayInterfaceMetalExt = "Metal"
+    ArrayInterfaceReverseDiffExt = "ReverseDiff"
+    ArrayInterfaceSparseArraysExt = "SparseArrays"
+    ArrayInterfaceStaticArraysCoreExt = "StaticArraysCore"
+    ArrayInterfaceTrackerExt = "Tracker"
+
+    [deps.ArrayInterface.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
+    BlockBandedMatrices = "ffab5731-97b5-5995-9138-79e8c1846df0"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    CUDSS = "45b445bb-4962-46a0-9369-b4df9d0f772e"
+    ChainRules = "082447d4-558c-5d27-93f4-14fc19e9eca2"
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
+    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
+    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
+
+[[deps.Artifacts]]
+uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
+
+[[deps.Atomix]]
+deps = ["UnsafeAtomics"]
+git-tree-sha1 = "0aa371c875e24cf773c87b2f50ab03e4545748af"
+uuid = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
+version = "1.7.0"
+
+    [deps.Atomix.weakdeps]
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    CUDACore = "bd0ed864-bdfe-4181-a5ed-ce625a5fdea2"
+
+[[deps.Base64]]
+uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+
+[[deps.BitTwiddlingConvenienceFunctions]]
+deps = ["Static"]
+git-tree-sha1 = "f21cfd4950cb9f0587d5067e69405ad2acd27b87"
+uuid = "62783981-4cbd-42fc-bca8-16325de8dc4b"
+version = "0.1.6"
+
+[[deps.BufferedStreams]]
+git-tree-sha1 = "6863c5b7fc997eadcabdbaf6c5f201dc30032643"
+uuid = "e1450e63-4bb3-523b-b2a4-4ffa8c0fd77d"
+version = "1.2.2"
+
+[[deps.CEnum]]
+git-tree-sha1 = "389ad5c84de1ae7cf0e28e381131c98ea87d54fc"
+uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
+version = "0.5.0"
+
+[[deps.CPUSummary]]
+deps = ["CpuId", "IfElse", "PrecompileTools", "Preferences", "Static"]
+git-tree-sha1 = "f3a21d7fc84ba618a779d1ed2fcca2e682865bab"
+uuid = "2a0fbf3d-bb9c-48f3-b0a9-814d99fd7ab9"
+version = "0.2.7"
+
+[[deps.ChunkCodecCore]]
+git-tree-sha1 = "3496e2b359c27793d12bec54ec94be7983a6ceb2"
+uuid = "0b6fb165-00bc-4d37-ab8b-79f91016dbe1"
+version = "1.0.2"
+
+[[deps.ChunkCodecLibZlib]]
+deps = ["ChunkCodecCore", "Zlib_jll"]
+git-tree-sha1 = "d4101e848e8d3f585d61d244c2fe0c80a70e6b3b"
+uuid = "4c0bbee4-addc-4d73-81a0-b6caacae83c8"
+version = "1.1.0"
+
+[[deps.ChunkCodecLibZstd]]
+deps = ["ChunkCodecCore", "Zstd_jll"]
+git-tree-sha1 = "34d9873079e4cb3d0c62926a225136824677073f"
+uuid = "55437552-ac27-4d47-9aa3-63184e8fd398"
+version = "1.0.0"
+
+[[deps.CloseOpenIntervals]]
+deps = ["Static", "StaticArrayInterface"]
+git-tree-sha1 = "05ba0d07cd4fd8b7a39541e31a7b0254704ea581"
+uuid = "fb6a15b2-703c-40df-9091-08a04967cfa9"
+version = "0.1.13"
+
+[[deps.CodecInflate64]]
+deps = ["TranscodingStreams"]
+git-tree-sha1 = "d981a6e8656b1e363a2731716f46851a2257deb7"
+uuid = "6309b1aa-fc58-479c-8956-599a07234577"
+version = "0.1.3"
+
+[[deps.CodecZlib]]
+deps = ["TranscodingStreams", "Zlib_jll"]
+git-tree-sha1 = "970758a3d591a2a5c2a907c53f2e2f8c1b1d3537"
+uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
+version = "0.7.9"
+
+[[deps.CommonSolve]]
+deps = ["PrecompileTools"]
+git-tree-sha1 = "6c389fa857f6ca5a95474b52a52023fd77f24cb7"
+uuid = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
+version = "0.2.14"
+
+[[deps.CommonSubexpressions]]
+deps = ["MacroTools"]
+git-tree-sha1 = "cda2cfaebb4be89c9084adaca7dd7333369715c5"
+uuid = "bbf7d656-a473-5ed7-a52c-81e309532950"
+version = "0.3.1"
+
+[[deps.CommonWorldInvalidations]]
+deps = ["PrecompileTools"]
+git-tree-sha1 = "7c4ea0adfb7238bf4678aa36325863fab6163f6f"
+uuid = "f70d9fcc-98c5-4d4a-abd7-e4cdeebd8ca8"
+version = "1.2.2"
+
+[[deps.Compat]]
+deps = ["TOML", "UUIDs"]
+git-tree-sha1 = "9d8a54ce4b17aa5bdce0ea5c34bc5e7c340d16ad"
+uuid = "34da2185-b29b-5c13-b0c7-acf172513d20"
+version = "4.18.1"
+weakdeps = ["Dates", "LinearAlgebra"]
+
+    [deps.Compat.extensions]
+    CompatLinearAlgebraExt = "LinearAlgebra"
+
+[[deps.CompilerCaching]]
+deps = ["LMDB", "SHA", "Scratch"]
+git-tree-sha1 = "1de3647e392372f1a77e41ae705ceaa12473bc08"
+uuid = "9db33cc3-5358-4881-8759-fa4194144afd"
+version = "0.5.3"
+
+[[deps.CompilerSupportLibraries_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
+version = "1.1.1+0"
+
+[[deps.CompositionsBase]]
+git-tree-sha1 = "802bb88cd69dfd1509f6670416bd4434015693ad"
+uuid = "a33af91c-f02d-484b-be07-31d278c5ca2b"
+version = "0.1.2"
+weakdeps = ["InverseFunctions"]
+
+    [deps.CompositionsBase.extensions]
+    CompositionsBaseInverseFunctionsExt = "InverseFunctions"
+
+[[deps.ConstructionBase]]
+git-tree-sha1 = "b1bc10667320dd5367aff450a992c951ea38fbbc"
+uuid = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
+version = "1.6.1"
+
+    [deps.ConstructionBase.extensions]
+    ConstructionBaseIntervalSetsExt = "IntervalSets"
+    ConstructionBaseLinearAlgebraExt = "LinearAlgebra"
+    ConstructionBaseStaticArraysExt = "StaticArrays"
+
+    [deps.ConstructionBase.weakdeps]
+    IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
+    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[[deps.CpuId]]
+deps = ["Markdown", "PrecompileTools"]
+git-tree-sha1 = "5dbd5150b96f29553fc3b553c6bfb0eadf7ac204"
+uuid = "adafc99b-e345-5852-983c-f28acb93d879"
+version = "0.3.3"
+
+[[deps.Crayons]]
+git-tree-sha1 = "54b76cbb40d9a0f5368c880725b2f141da77c94f"
+uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
+version = "4.2.0"
+
+[[deps.DataAPI]]
+git-tree-sha1 = "abe83f3a2f1b857aac70ef8b269080af17764bbe"
+uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
+version = "1.16.0"
+
+[[deps.DataStructures]]
+deps = ["OrderedCollections"]
+git-tree-sha1 = "50fc132ca085b05b7e09fe54447adc179c96df41"
+uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+version = "0.19.7"
+
+[[deps.DataValueInterfaces]]
+git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
+uuid = "e2d170a0-9d28-54be-80f0-106bbe20a464"
+version = "1.0.0"
+
+[[deps.Dates]]
+deps = ["Printf"]
+uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
+
+[[deps.DelimitedFiles]]
+deps = ["Mmap"]
+git-tree-sha1 = "9e2f36d3c96a820c678f2f1f1782582fcf685bae"
+uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+version = "1.9.1"
+
+[[deps.DiffResults]]
+deps = ["StaticArraysCore"]
+git-tree-sha1 = "782dd5f4561f5d267313f23853baaaa4c52ea621"
+uuid = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+version = "1.1.0"
+
+[[deps.DiffRules]]
+deps = ["IrrationalConstants", "LogExpFunctions", "NaNMath", "Random", "SpecialFunctions"]
+git-tree-sha1 = "6a4a3d254ca35fe9b35e456c66589228514d6a01"
+uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
+version = "1.18.0"
+
+[[deps.DifferentiationInterface]]
+deps = ["ADTypes", "LinearAlgebra"]
+git-tree-sha1 = "4b6690f3770daf596a0a092203a2e6130d34c53b"
+uuid = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+version = "0.7.22"
+
+    [deps.DifferentiationInterface.extensions]
+    DifferentiationInterfaceChainRulesCoreExt = "ChainRulesCore"
+    DifferentiationInterfaceDiffractorExt = "Diffractor"
+    DifferentiationInterfaceEnzymeExt = ["EnzymeCore", "Enzyme"]
+    DifferentiationInterfaceFastDifferentiationExt = "FastDifferentiation"
+    DifferentiationInterfaceFiniteDiffExt = "FiniteDiff"
+    DifferentiationInterfaceFiniteDifferencesExt = "FiniteDifferences"
+    DifferentiationInterfaceForwardDiffExt = ["ForwardDiff", "DiffResults"]
+    DifferentiationInterfaceGPUArraysCoreExt = ["GPUArraysCore", "Adapt"]
+    DifferentiationInterfaceGTPSAExt = "GTPSA"
+    DifferentiationInterfaceHyperHessiansExt = "HyperHessians"
+    DifferentiationInterfaceMooncakeExt = "Mooncake"
+    DifferentiationInterfacePolyesterForwardDiffExt = ["PolyesterForwardDiff", "ForwardDiff", "DiffResults"]
+    DifferentiationInterfaceReverseDiffExt = ["ReverseDiff", "DiffResults"]
+    DifferentiationInterfaceSparseArraysExt = "SparseArrays"
+    DifferentiationInterfaceSparseConnectivityTracerExt = "SparseConnectivityTracer"
+    DifferentiationInterfaceSparseMatrixColoringsExt = "SparseMatrixColorings"
+    DifferentiationInterfaceStaticArraysExt = "StaticArrays"
+    DifferentiationInterfaceSymbolicsExt = "Symbolics"
+    DifferentiationInterfaceTrackerExt = "Tracker"
+    DifferentiationInterfaceZygoteExt = ["Zygote", "ForwardDiff"]
+
+    [deps.DifferentiationInterface.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+    Diffractor = "9f5e2b26-1114-432f-b630-d3fe2085c51c"
+    Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+    FastDifferentiation = "eb9bf01b-bf85-4b60-bf87-ee5de06c00be"
+    FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
+    FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
+    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
+    GTPSA = "b27dd330-f138-47c5-815b-40db9dd9b6e8"
+    HyperHessians = "06b494a0-c8e0-40cc-ad32-d99506a00a6c"
+    Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
+    PolyesterForwardDiff = "98d1487c-24ca-40b6-b7ab-df2af84e126b"
+    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    SparseConnectivityTracer = "9f842d2f-2579-4b1d-911e-f412cf18a3f5"
+    SparseMatrixColorings = "0a514795-09f3-496d-8182-132a7b665d35"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
+    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
+    Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[[deps.Distributed]]
+deps = ["Random", "Serialization", "Sockets"]
+uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+
+[[deps.DocStringExtensions]]
+git-tree-sha1 = "7442a5dfe1ebb773c29cc2962a8980f47221d76c"
+uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+version = "0.9.5"
+
+[[deps.Downloads]]
+deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
+uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+version = "1.6.0"
+
+[[deps.ExprTools]]
+git-tree-sha1 = "d2e49e7efd29719d6f28b891b0e0e159daa9d2b4"
+uuid = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
+version = "0.1.11"
+
+[[deps.FastClosures]]
+git-tree-sha1 = "acebe244d53ee1b461970f8910c235b259e772ef"
+uuid = "9aa1b823-49e4-5ca5-8b0f-3971ec8bab6a"
+version = "0.3.2"
+
+[[deps.FileIO]]
+deps = ["Pkg", "Requires", "UUIDs"]
+git-tree-sha1 = "6621fef488e496356c9c9625d0562c12a6070819"
+uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+version = "1.20.0"
+
+    [deps.FileIO.extensions]
+    HTTPExt = "HTTP"
+
+    [deps.FileIO.weakdeps]
+    HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+
+[[deps.FileWatching]]
+uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
+
+[[deps.FillArrays]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "889174c6aef868dc0e5f083dd6d94b4d3b786d7f"
+uuid = "1a297f60-69ca-5386-bcde-b61e274b549b"
+version = "1.19.0"
+
+    [deps.FillArrays.extensions]
+    FillArraysPDMatsExt = "PDMats"
+    FillArraysSparseArraysExt = "SparseArrays"
+    FillArraysStaticArraysExt = "StaticArrays"
+    FillArraysStatisticsExt = "Statistics"
+
+    [deps.FillArrays.weakdeps]
+    PDMats = "90014a1f-27ba-587c-ab20-58faa44d9150"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[[deps.ForwardDiff]]
+deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions"]
+git-tree-sha1 = "a6fec1fb7a2cebfa203852419f4f7bdd3f9a8b38"
+uuid = "f6369f11-7733-5829-9624-2563aa707210"
+version = "1.5.0"
+weakdeps = ["StaticArrays"]
+
+    [deps.ForwardDiff.extensions]
+    ForwardDiffStaticArraysExt = "StaticArrays"
+
+[[deps.Future]]
+deps = ["Random"]
+uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
+
+[[deps.GPUCompiler]]
+deps = ["CompilerCaching", "ExprTools", "InteractiveUtils", "LLVM", "Libdl", "Logging", "PrecompileTools", "Preferences", "REPL", "ScopedValues", "TOML", "Tracy", "UUIDs", "tree_sitter_gcn_jll", "tree_sitter_llvm_jll", "tree_sitter_ptx_jll", "tree_sitter_spirv_jll"]
+git-tree-sha1 = "3a0cd93954ebbaa9fb219dba95d5929972f11374"
+uuid = "61eb1bfa-7361-4325-ad38-22787b887f55"
+version = "2.23.3"
+
+    [deps.GPUCompiler.extensions]
+    CthulhuExt = "Cthulhu"
+    HighlightsExt = "Highlights"
+
+    [deps.GPUCompiler.weakdeps]
+    AMDGPU_LLVM_Backend_jll = "cc5c0156-bd05-5a77-8a68-bb0aafb29019"
+    Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
+    Highlights = "eafb193a-b7ab-5a9e-9068-77385905fa72"
+    LLVMDowngrader_jll = "f52de702-fb25-5922-94ba-81dd59b07444"
+    NVPTX_LLVM_Backend_jll = "ef6e0fe3-e6ef-59c0-bde6-4989574699e0"
+    SPIRV_LLVM_Backend_jll = "4376b9bf-cff8-51b6-bb48-39421dff0d0c"
+    SPIRV_LLVM_Translator_jll = "4a5d46fc-d8cf-5151-a261-86b458210efb"
+
+[[deps.GPUToolbox]]
+git-tree-sha1 = "5d825bab8a72d96e350e47e30616cf6a4b02fb49"
+uuid = "096a3bc2-3ced-46d0-87f4-dd12716f4bfc"
+version = "3.6.0"
+
+[[deps.GeoEnergyIO]]
+deps = ["Artifacts", "Dates", "DelimitedFiles", "HDF5", "Jutul", "LazyArtifacts", "Lerche", "LinearAlgebra", "OrderedCollections", "Parsers", "PrecompileTools", "StaticArrays", "XML", "ZipArchives"]
+git-tree-sha1 = "260cfe92c43c5e097850955433f2d07603f5b075"
+uuid = "3b1dd628-313a-45bb-9d8d-8f3c48dcb5d4"
+version = "1.2.4"
+
+    [deps.GeoEnergyIO.extensions]
+    GeoEnergyIOPythonCallExt = "PythonCall"
+
+    [deps.GeoEnergyIO.weakdeps]
+    PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+
+[[deps.Graphs]]
+deps = ["ArnoldiMethod", "DataStructures", "Inflate", "LinearAlgebra", "Random", "SimpleTraits", "SparseArrays", "Statistics"]
+git-tree-sha1 = "dbb2b976f605b220dfe139d6db9f3859680da09e"
+uuid = "86223c79-3864-5bf0-83f7-82e725a168b6"
+version = "1.15.0"
+
+    [deps.Graphs.extensions]
+    GraphsSharedArraysExt = "SharedArrays"
+
+    [deps.Graphs.weakdeps]
+    Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+    SharedArrays = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
+
+[[deps.HDF5]]
+deps = ["Compat", "HDF5_jll", "Libdl", "MPIPreferences", "Mmap", "Preferences", "Printf", "Random", "Requires", "UUIDs"]
+git-tree-sha1 = "26e37af34e8ccb7a8358bd8de1619c7bcb526738"
+uuid = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+version = "0.17.4"
+weakdeps = ["MPI"]
+
+    [deps.HDF5.extensions]
+    MPIExt = "MPI"
+
+[[deps.HDF5_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LibCURL_jll", "Libdl", "MPIABI_jll", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "OpenSSL_jll", "TOML", "Zlib_jll", "aws_c_s3_jll", "dlfcn_win32_jll", "libaec_jll", "mpif_jll"]
+git-tree-sha1 = "d791a1c4c3c8f383b248a799be31105d00310204"
+uuid = "0234f1f7-429e-5d53-9886-15a909be8d59"
+version = "2.2.4+0"
+
+[[deps.HYPRE]]
+deps = ["CEnum", "HYPRE_jll", "Libdl", "MPI"]
+git-tree-sha1 = "65db3eb88dfe08dcefd8d84d6fe1fb378b9b5a32"
+uuid = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771"
+version = "1.8.0"
+
+    [deps.HYPRE.extensions]
+    HYPREPartitionedArrays = ["PartitionedArrays", "SparseArrays", "SparseMatricesCSR"]
+    HYPRESparseArrays = "SparseArrays"
+    HYPRESparseMatricesCSR = ["SparseArrays", "SparseMatricesCSR"]
+
+    [deps.HYPRE.weakdeps]
+    PartitionedArrays = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    SparseMatricesCSR = "a0a7dd2c-ebf4-11e9-1f05-cf50bc540ca1"
+
+[[deps.HYPRE_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl", "MPIABI_jll", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "TOML", "libblastrampoline_jll"]
+git-tree-sha1 = "c232756375937fe504929eb4885570e4ab24d674"
+uuid = "0a602bbd-b08b-5d75-8d32-0de6eef44785"
+version = "3.1.2+0"
+
+[[deps.HashArrayMappedTries]]
+git-tree-sha1 = "2eaa69a7cab70a52b9687c8bf950a5a93ec895ae"
+uuid = "076d061b-32b6-4027-95e0-9a2c6f6d7e74"
+version = "0.2.0"
+
+[[deps.Hwloc_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "XML2_jll", "Xorg_libpciaccess_jll"]
+git-tree-sha1 = "550c21420b96b46f2f0abe8fc4c9430cd55649e3"
+uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
+version = "2.15.0+3"
+
+[[deps.ILUZero]]
+deps = ["LinearAlgebra", "SparseArrays"]
+git-tree-sha1 = "b007cfc7f9bee9a958992d2301e9c5b63f332a90"
+uuid = "88f59080-6952-5380-9ea5-54057fb9a43f"
+version = "0.2.0"
+
+[[deps.IfElse]]
+git-tree-sha1 = "debdd00ffef04665ccbb3e150747a77560e8fad1"
+uuid = "615f187c-cbe4-4ef1-ba3b-2fcf58d6d173"
+version = "0.1.1"
+
+[[deps.Inflate]]
+git-tree-sha1 = "d1b1b796e47d94588b3757fe84fbf65a5ec4a80d"
+uuid = "d25df0c9-e2be-5dd7-82c8-3ad0b3e990b9"
+version = "0.1.5"
+
+[[deps.InputBuffers]]
+git-tree-sha1 = "e5392ea00942566b631e991dd896942189937b2f"
+uuid = "0c81fc1b-5583-44fc-8770-48be1e1cca08"
+version = "1.1.1"
+
+[[deps.InteractiveUtils]]
+deps = ["Markdown"]
+uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
+
+[[deps.InverseFunctions]]
+git-tree-sha1 = "5cc6ad3e2bfc75a11eed92632ee341d37f4a4536"
+uuid = "3587e190-3f89-42d0-90ee-14403ec27112"
+version = "0.1.18"
+weakdeps = ["Dates", "Test"]
+
+    [deps.InverseFunctions.extensions]
+    InverseFunctionsDatesExt = "Dates"
+    InverseFunctionsTestExt = "Test"
+
+[[deps.IrrationalConstants]]
+git-tree-sha1 = "d22e8bdb3f03c300a103ff23c0dd5a654c6701de"
+uuid = "92d709cd-6900-40b7-9082-c6be49f344b6"
+version = "0.2.7"
+
+[[deps.IteratorInterfaceExtensions]]
+git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
+uuid = "82899510-4779-5014-852e-03e436cf321d"
+version = "1.0.0"
+
+[[deps.JLD2]]
+deps = ["ChunkCodecCore", "ChunkCodecLibZlib", "ChunkCodecLibZstd", "FileIO", "MacroTools", "Mmap", "OrderedCollections", "PrecompileTools", "ScopedValues"]
+git-tree-sha1 = "9ce2e7c49ae4a7035b7d60db3a553b1f6c16875d"
+uuid = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+version = "0.6.7"
+
+    [deps.JLD2.extensions]
+    UnPackExt = "UnPack"
+
+    [deps.JLD2.weakdeps]
+    UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
+
+[[deps.JLLWrappers]]
+deps = ["Artifacts", "Preferences"]
+git-tree-sha1 = "7204148362dafe5fe6a273f855b8ccbe4df8173e"
+uuid = "692b3bcd-3c85-4b1f-b108-f13ce0eb3210"
+version = "1.8.0"
+
+[[deps.Jutul]]
+deps = ["Adapt", "Crayons", "Dates", "DifferentiationInterface", "ExprTools", "ForwardDiff", "Graphs", "ILUZero", "JLD2", "KernelAbstractions", "Krylov", "LinearAlgebra", "LinearOperators", "Logging", "MAT", "MappedArrays", "Metis", "OrderedCollections", "Polyester", "Polynomials", "PrettyTables", "Printf", "ProgressMeter", "SparseArrays", "SparseConnectivityTracer", "SparseMatrixColorings", "SparsityTracing", "StaticArrays", "Statistics", "SymRCM", "TimerOutputs"]
+git-tree-sha1 = "3c588f149d8b53723826a7c7912b738ab5568e99"
+uuid = "2b460a1a-8a2b-45b2-b125-b5c536396eb9"
+version = "0.5.9"
+
+    [deps.Jutul.extensions]
+    JutulAMDGPUExt = "AMDGPU"
+    JutulAMGCLWrapExt = "AMGCLWrap"
+    JutulCUDAExt = "CUDA"
+    JutulCUDSSExt = ["CUDA", "CUDSS"]
+    JutulGLMakieExt = "GLMakie"
+    JutulGmshExt = "Gmsh"
+    JutulHYPREExt = ["HYPRE", "MPI"]
+    JutulKAPreconditionersMetalExt = "Metal"
+    JutulKLUExt = "KLU"
+    JutulKaHyParExt = "KaHyPar"
+    JutulLBFGSBExt = "LBFGSB"
+    JutulMakieExt = "Makie"
+    JutulPartitionedArraysExt = ["PartitionedArrays", "MPI"]
+    JutulWriteVTKExt = "WriteVTK"
+
+    [deps.Jutul.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    AMGCLWrap = "4f76b812-4ba5-496d-b042-d70715554288"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    CUDSS = "45b445bb-4962-46a0-9369-b4df9d0f772e"
+    GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+    Gmsh = "705231aa-382f-11e9-3f0c-b7cb4346fdeb"
+    HYPRE = "b5ffcf37-a2bd-41ab-a3da-4bd9bc8ad771"
+    KLU = "ef3ab10e-7fda-4108-b977-705223b18434"
+    KaHyPar = "2a6221f6-aa48-11e9-3542-2d9e0ef01880"
+    LBFGSB = "5be7bae1-8223-5378-bac3-9e7378a2f6e6"
+    MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    PartitionedArrays = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
+    WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+
+[[deps.JutulDarcy]]
+deps = ["Adapt", "Artifacts", "Dates", "DelimitedFiles", "DocStringExtensions", "ForwardDiff", "GeoEnergyIO", "HYPRE", "Jutul", "Krylov", "LazyArtifacts", "LinearAlgebra", "MAT", "MultiComponentFlash", "OrderedCollections", "Polyester", "Polynomials", "PrecompileTools", "PrettyTables", "Printf", "ProgressMeter", "SparseArrays", "StaticArrays", "Statistics", "Test", "TimerOutputs"]
+git-tree-sha1 = "bc16026e66814d4a6a0222710424a19d4ec0878a"
+uuid = "82210473-ab04-4dce-b31b-11573c4f8e0a"
+version = "0.4.1"
+
+    [deps.JutulDarcy.extensions]
+    JutulDarcyAMDGPUExt = "AMDGPU"
+    JutulDarcyAMGXExt = "AMGX"
+    JutulDarcyCUDAExt = "CUDA"
+    JutulDarcyMakieExt = "Makie"
+    JutulDarcyMetalExt = "Metal"
+    JutulDarcyPartitionedArraysExt = ["PartitionedArrays", "MPI", "HYPRE"]
+
+    [deps.JutulDarcy.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    AMGX = "c963dde9-0319-47f5-bf0c-b07d3c80ffa6"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    PartitionedArrays = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
+
+[[deps.KernelAbstractions]]
+deps = ["Adapt", "Atomix", "GPUCompiler", "GPUToolbox", "KernelInterface", "LLVM", "MacroTools", "PrecompileTools", "Printf", "Random", "Random123", "RandomNumbers", "SPIRVIntrinsics", "SPIRV_LLVM_Backend_jll", "SPIRV_Tools_jll", "StaticArraysCore", "ThreadTeams", "UnsafeAtomics", "pocl_standalone_jll"]
+git-tree-sha1 = "33ee3c9dc4b275a979c8b1ce90b912d70be35ea7"
+uuid = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+version = "0.10.8"
+
+    [deps.KernelAbstractions.extensions]
+    AMDGPUExt = "AMDGPU"
+    EnzymeExt = "EnzymeCore"
+    LinearAlgebraExt = "LinearAlgebra"
+    MetalExt = "Metal"
+    SparseArraysExt = "SparseArrays"
+    StaticArraysExt = "StaticArrays"
+    oneAPIExt = "oneAPI"
+
+    [deps.KernelAbstractions.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+    LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
+
+[[deps.KernelInterface]]
+git-tree-sha1 = "626abe5ae4c64c2e5600078962d67bbfab983ce3"
+uuid = "4ee993da-d684-4d17-a7dd-4e58e78d92bf"
+version = "0.4.6"
+
+[[deps.Krylov]]
+deps = ["LinearAlgebra", "Printf", "SparseArrays"]
+git-tree-sha1 = "b13076e4fff6ea0d0a5ddd9b939a11ca2027755a"
+uuid = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+version = "0.10.12"
+
+[[deps.LLVM]]
+deps = ["CEnum", "LLVMExtra_jll", "Libdl", "PrecompileTools", "Preferences", "Printf", "ScopedValues", "Unicode"]
+git-tree-sha1 = "41c2ce7ec5a14c89b93dc6a5853bf2a91d7a8583"
+uuid = "929cbde3-209d-540e-8aea-75f648917ca0"
+version = "10.4.3"
+
+    [deps.LLVM.extensions]
+    BFloat16sExt = "BFloat16s"
+
+    [deps.LLVM.weakdeps]
+    BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
+
+[[deps.LLVMExtra_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "TOML"]
+git-tree-sha1 = "39def0b4521e0ef2bf26960d8965729f496bb4ec"
+uuid = "dad2f222-ce93-54a1-a47d-0025e8a3acab"
+version = "0.0.56+0"
+
+[[deps.LLVMOpenMP_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "e5b100780d4d30d63b4618d7930d48af409c1772"
+uuid = "1d63c593-3942-5779-bab2-d838dc0a180e"
+version = "23.1.1+0"
+
+[[deps.LMDB]]
+deps = ["CEnum", "LMDB_jll"]
+git-tree-sha1 = "84e5cba87693714bfd67f589a91f24a996ff3e69"
+uuid = "11f193de-5e89-5f17-923a-7d207d56daf9"
+version = "3.0.1"
+
+[[deps.LMDB_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "196c962b4d66b978b9be1e15e4e1d53441d5f028"
+uuid = "6206cf0b-f360-5984-af49-5437264c140e"
+version = "1.0.3+0"
+
+[[deps.LaTeXStrings]]
+git-tree-sha1 = "f88f3ccef05a6a72a0cf0ed417c8fd68530f4ab2"
+uuid = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+version = "1.4.1"
+
+[[deps.LayoutPointers]]
+deps = ["ArrayInterface", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static", "StaticArrayInterface"]
+git-tree-sha1 = "a9eaadb366f5493a5654e843864c13d8b107548c"
+uuid = "10f19ff3-798f-405d-979b-55457f8fc047"
+version = "0.1.17"
+
+[[deps.LazyArtifacts]]
+deps = ["Artifacts", "Pkg"]
+uuid = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
+
+[[deps.Lerche]]
+deps = ["DataStructures", "Logging", "PrecompileTools"]
+git-tree-sha1 = "274c9f06be1b35a5a10e66df3efd54e351b64e30"
+uuid = "d42ef402-04e6-4356-9f73-091573ea58dc"
+version = "0.5.8"
+
+[[deps.LibCURL]]
+deps = ["LibCURL_jll", "MozillaCACerts_jll"]
+uuid = "b27032c2-a3e7-50c8-80cd-2d36dbcbfd21"
+version = "0.6.4"
+
+[[deps.LibCURL_jll]]
+deps = ["Artifacts", "LibSSH2_jll", "Libdl", "MbedTLS_jll", "Zlib_jll", "nghttp2_jll"]
+uuid = "deac9b47-8bc7-5906-a0fe-35ac56dc84c0"
+version = "8.4.0+0"
+
+[[deps.LibGit2]]
+deps = ["Base64", "LibGit2_jll", "NetworkOptions", "Printf", "SHA"]
+uuid = "76f85450-5226-5b5a-8eaa-529ad045b433"
+
+[[deps.LibGit2_jll]]
+deps = ["Artifacts", "LibSSH2_jll", "Libdl", "MbedTLS_jll"]
+uuid = "e37daf67-58a4-590a-8e99-b0245dd2ffc5"
+version = "1.6.4+0"
+
+[[deps.LibSSH2_jll]]
+deps = ["Artifacts", "Libdl", "MbedTLS_jll"]
+uuid = "29816b5a-b9ab-546f-933c-edad1886dfa8"
+version = "1.11.0+1"
+
+[[deps.LibTracyClient_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "d4e20500d210247322901841d4eafc7a0c52642d"
+uuid = "ad6e5548-8b26-5c9f-8ef3-ef0ad883f3a5"
+version = "0.13.1+0"
+
+[[deps.Libdl]]
+uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+
+[[deps.Libiconv_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "be484f5c92fad0bd8acfef35fe017900b0b73809"
+uuid = "94ce4f54-9a6c-5748-9c1c-f9c7231a4531"
+version = "1.18.0+0"
+
+[[deps.LinearAlgebra]]
+deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
+uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+
+[[deps.LinearOperators]]
+deps = ["FastClosures", "LinearAlgebra", "Printf", "SparseArrays", "TimerOutputs"]
+git-tree-sha1 = "99a44fc6443bfe118cfe64ca059136bc85e64ccb"
+uuid = "5c8ed15e-5a4c-59e4-a42b-c7e8811fb125"
+version = "2.14.3"
+
+    [deps.LinearOperators.extensions]
+    LinearOperatorsAMDGPUExt = "AMDGPU"
+    LinearOperatorsCUDAExt = "CUDA"
+    LinearOperatorsChainRulesCoreExt = "ChainRulesCore"
+    LinearOperatorsJLArraysExt = "JLArrays"
+    LinearOperatorsLDLFactorizationsExt = "LDLFactorizations"
+    LinearOperatorsMetalExt = "Metal"
+    LinearOperatorsOpNormExt = ["Arpack", "TSVD", "GenericLinearAlgebra"]
+
+    [deps.LinearOperators.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
+    JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
+    LDLFactorizations = "40e66cde-538c-5869-a4ad-c39174c6795b"
+    Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+    TSVD = "9449cd9e-2762-5aa3-a617-5413e99d722e"
+
+[[deps.LogExpFunctions]]
+deps = ["DocStringExtensions", "IrrationalConstants", "LinearAlgebra"]
+git-tree-sha1 = "52847246e86dd3dd88c39716748c57fd2bc43dce"
+uuid = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
+version = "1.0.6"
+
+    [deps.LogExpFunctions.extensions]
+    LogExpFunctionsChainRulesCoreExt = "ChainRulesCore"
+    LogExpFunctionsChangesOfVariablesExt = "ChangesOfVariables"
+    LogExpFunctionsInverseFunctionsExt = "InverseFunctions"
+
+    [deps.LogExpFunctions.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    ChangesOfVariables = "9e997f8a-9a97-42d5-a9f1-ce6bfc15e2c0"
+    InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
+
+[[deps.Logging]]
+uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
+
+[[deps.MAT]]
+deps = ["BufferedStreams", "CodecZlib", "HDF5", "SparseArrays"]
+git-tree-sha1 = "1d2dd9b186742b0f317f2530ddcbf00eebb18e96"
+uuid = "23992714-dd62-5051-b70f-ba57cb901cac"
+version = "0.10.7"
+
+[[deps.METIS_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "5ecd92439c60a50c49bd6e96192e9d486b24b050"
+uuid = "d00139f3-1899-568f-a2f0-47f597d42d70"
+version = "5.1.4+0"
+
+[[deps.MPI]]
+deps = ["Distributed", "DocStringExtensions", "Libdl", "MPIABI_jll", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "PkgVersion", "PrecompileTools", "Serialization", "Sockets"]
+git-tree-sha1 = "7b7af40eaafefa3b85178e4028b5a094880e5abd"
+uuid = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+version = "0.20.29"
+
+    [deps.MPI.extensions]
+    AMDGPUExt = "AMDGPU"
+    CUDAExt = "CUDA"
+    OneAPIExt = "oneAPI"
+
+    [deps.MPI.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
+
+[[deps.MPIABI_jll]]
+deps = ["Artifacts", "Hwloc_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
+git-tree-sha1 = "42e2cada9f35500b4d227106ce2b60e85d9f15bc"
+uuid = "b5ada748-db0f-5fc0-8972-9331c762740c"
+version = "1.0.1+0"
+
+[[deps.MPICH_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "Hwloc_jll", "JLLWrappers", "Libdl", "MPIPreferences", "TOML"]
+git-tree-sha1 = "08cb47f95a2f1b795e43a9e4f9783e68ecdc1ca6"
+uuid = "7cb0a576-ebde-5e09-9194-50597f1243b4"
+version = "5.0.3+0"
+
+[[deps.MPIPreferences]]
+deps = ["Libdl", "Preferences"]
+git-tree-sha1 = "8e98d5d80b87403c311fd51e8455d4546ba7a5f8"
+uuid = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+version = "0.1.12"
+
+[[deps.MPItrampoline_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
+git-tree-sha1 = "09a99227205419c00e734f413ee98c18bc1b02e4"
+uuid = "f1f71cc9-e9ae-5b93-9b94-4fe0e1ad3748"
+version = "5.5.7+0"
+
+[[deps.MacroTools]]
+git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"
+uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+version = "0.5.16"
+
+[[deps.ManualMemory]]
+git-tree-sha1 = "bcaef4fc7a0cfe2cba636d84cda54b5e4e4ca3cd"
+uuid = "d125e4d3-2237-4719-b19c-fa641b8a4667"
+version = "0.1.8"
+
+[[deps.MappedArrays]]
+git-tree-sha1 = "0ee4497a4e80dbd29c058fcee6493f5219556f40"
+uuid = "dbb5928d-eab1-5f90-85c2-b9b0edb7c900"
+version = "0.4.3"
+
+[[deps.Markdown]]
+deps = ["Base64"]
+uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
+
+[[deps.MbedTLS_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
+version = "2.28.2+1"
+
+[[deps.Metis]]
+deps = ["CEnum", "LinearAlgebra", "METIS_jll", "SparseArrays"]
+git-tree-sha1 = "54aca4fd53d39dcd2c3f1bef367b6921e8178628"
+uuid = "2679e427-3c69-5b7f-982b-ece356f1e94b"
+version = "1.5.0"
+
+    [deps.Metis.extensions]
+    MetisGraphs = "Graphs"
+    MetisLightGraphs = "LightGraphs"
+    MetisSimpleWeightedGraphs = ["SimpleWeightedGraphs", "Graphs"]
+
+    [deps.Metis.weakdeps]
+    Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
+    LightGraphs = "093fc24a-ae57-5d10-9952-331d41423f4d"
+    SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
+
+[[deps.MicrosoftMPI_jll]]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
+git-tree-sha1 = "3350d35d0ebcf7ccee0c66290b8e95d82419ef6f"
+uuid = "9237b28f-5490-5468-be7b-bb81f5f5e6cf"
+version = "10.1.5+0"
+
+[[deps.Mmap]]
+uuid = "a63ad114-7e13-5084-954f-fe012c677804"
+
+[[deps.MozillaCACerts_jll]]
+uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
+version = "2023.1.10"
+
+[[deps.MultiComponentFlash]]
+deps = ["ForwardDiff", "LinearAlgebra", "Printf", "Roots", "StaticArrays"]
+git-tree-sha1 = "c1d2545be754e7866cc69f97a1c5207cfc90b934"
+uuid = "35e5bd01-9722-4017-9deb-64a5d32478ff"
+version = "2.1.1"
+
+[[deps.NaNMath]]
+deps = ["OpenLibm_jll"]
+git-tree-sha1 = "676c0f1c1c34224d6869675047a54b42fdc7b8c5"
+uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
+version = "1.1.5"
+
+[[deps.NetworkOptions]]
+uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
+version = "1.2.0"
+
+[[deps.OpenBLAS_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
+uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
+version = "0.3.23+4"
+
+[[deps.OpenLibm_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
+version = "0.8.1+4"
+
+[[deps.OpenMPI_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "Hwloc_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML", "Zlib_jll"]
+git-tree-sha1 = "0dba69ef957d790d41484ca7c20212c5ac806738"
+uuid = "fe0851c0-eecd-5654-98d4-656369965a5c"
+version = "5.0.14+0"
+
+[[deps.OpenSSL_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "20dd6a885a6fe8b07584d3eb8073133ad04c72e3"
+uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
+version = "3.5.9+0"
+
+[[deps.OpenSpecFun_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "1346c9208249809840c91b26703912dff463d335"
+uuid = "efe28fd5-8261-553b-a9e1-b2916fc3738e"
+version = "0.5.6+0"
+
+[[deps.OrderedCollections]]
+git-tree-sha1 = "94ba93778373a53bfd5a0caaf7d809c445292ff4"
+uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+version = "1.8.2"
+
+[[deps.Parsers]]
+deps = ["Dates", "PrecompileTools", "UUIDs"]
+git-tree-sha1 = "2facd7b5863092567d54590997caf8f6db8e0b1e"
+uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+version = "2.8.11"
+
+[[deps.Pkg]]
+deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
+uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+version = "1.10.0"
+
+[[deps.PkgVersion]]
+deps = ["Pkg"]
+git-tree-sha1 = "f9501cc0430a26bc3d156ae1b5b0c1b47af4d6da"
+uuid = "eebad327-c553-4316-9ea0-9fa01ccd7688"
+version = "0.3.3"
+
+[[deps.Polyester]]
+deps = ["ArrayInterface", "BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "ManualMemory", "PolyesterWeave", "Static", "StaticArrayInterface", "StrideArraysCore", "ThreadingUtilities"]
+git-tree-sha1 = "16bbc30b5ebea91e9ce1671adc03de2832cff552"
+uuid = "f517fe37-dbe3-4b94-8317-1923a5111588"
+version = "0.7.19"
+
+[[deps.PolyesterWeave]]
+deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
+git-tree-sha1 = "645bed98cd47f72f67316fd42fc47dee771aefcd"
+uuid = "1d0040c9-8b98-4ee7-8388-3f51789ca0ad"
+version = "0.2.2"
+
+[[deps.Polynomials]]
+deps = ["LinearAlgebra", "OrderedCollections", "Setfield", "SparseArrays"]
+git-tree-sha1 = "d86ea3a5364b306b8547e02741830e69c2d04448"
+uuid = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
+version = "4.1.6"
+
+    [deps.Polynomials.extensions]
+    PolynomialsChainRulesCoreExt = "ChainRulesCore"
+    PolynomialsFFTWExt = "FFTW"
+    PolynomialsMakieExt = "Makie"
+    PolynomialsMutableArithmeticsExt = "MutableArithmetics"
+    PolynomialsRecipesBaseExt = "RecipesBase"
+
+    [deps.Polynomials.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+    MutableArithmetics = "d8a4904e-b15c-11e9-3269-09a3773c0cb0"
+    RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+
+[[deps.PrecompileTools]]
+deps = ["Preferences"]
+git-tree-sha1 = "5aa36f7049a63a1528fe8f7c3f2113413ffd4e1f"
+uuid = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+version = "1.2.1"
+
+[[deps.Preferences]]
+deps = ["TOML"]
+git-tree-sha1 = "aef1987d90dcc2e2cbd919ad10b2d25bcce4f418"
+uuid = "21216c6a-2e73-6563-6e65-726566657250"
+version = "1.6.1"
+
+[[deps.PrettyTables]]
+deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "REPL", "Reexport", "StringManipulation", "StyledStrings", "Tables"]
+git-tree-sha1 = "eeac4c9337f876c3c32b8da732141953567f57c9"
+uuid = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
+version = "3.5.1"
+
+    [deps.PrettyTables.extensions]
+    PrettyTablesExcelExt = "XLSX"
+    PrettyTablesTypstryExt = "Typstry"
+    PrettyTablesWriteDocxExt = "WriteDocx"
+
+    [deps.PrettyTables.weakdeps]
+    Typstry = "f0ed7684-a786-439e-b1e3-3b82803b501e"
+    WriteDocx = "d049ceea-54ee-41d7-a26f-ba29db3b6599"
+    XLSX = "fdbf4ff8-1666-58a4-91e7-1b58723a45e0"
+
+[[deps.Printf]]
+deps = ["Unicode"]
+uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[[deps.ProgressMeter]]
+deps = ["Printf"]
+git-tree-sha1 = "ce5ba3edfdeba107a721748d53b5f5887f415853"
+uuid = "92933f4c-e287-5a05-a399-4b506db050ca"
+version = "1.13.0"
+
+    [deps.ProgressMeter.extensions]
+    ProgressMeterDistributedExt = "Distributed"
+    ProgressMeterIJuliaExt = "IJulia"
+
+    [deps.ProgressMeter.weakdeps]
+    Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+    IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
+
+[[deps.REPL]]
+deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
+uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
+
+[[deps.Random]]
+deps = ["SHA"]
+uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[[deps.Random123]]
+deps = ["Random", "RandomNumbers"]
+git-tree-sha1 = "dbe5fd0b334694e905cb9fda73cd8554333c46e2"
+uuid = "74087812-796a-5b5d-8853-05524746bad3"
+version = "1.7.1"
+
+[[deps.RandomNumbers]]
+deps = ["Random"]
+git-tree-sha1 = "c6ec94d2aaba1ab2ff983052cf6a606ca5985902"
+uuid = "e6cf234a-135c-5ec9-84dd-332b85af5143"
+version = "1.6.0"
+
+[[deps.Reexport]]
+git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
+uuid = "189a3867-3050-52da-a836-e630ba90ab69"
+version = "1.2.2"
+
+[[deps.Requires]]
+deps = ["UUIDs"]
+git-tree-sha1 = "62389eeff14780bfe55195b7204c0d8738436d64"
+uuid = "ae029012-a4dd-5104-9daa-d747884805df"
+version = "1.3.1"
+
+[[deps.Roots]]
+deps = ["Accessors", "CommonSolve", "Printf"]
+git-tree-sha1 = "15f266d7b3039ca0608d2c53bb32225b96932310"
+uuid = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
+version = "3.0.14"
+
+    [deps.Roots.extensions]
+    RootsChainRulesCoreExt = "ChainRulesCore"
+    RootsForwardDiffExt = "ForwardDiff"
+    RootsIntervalRootFindingExt = "IntervalRootFinding"
+    RootsSymPyExt = "SymPy"
+    RootsSymPyPythonCallExt = "SymPyPythonCall"
+    RootsUnitfulExt = "Unitful"
+
+    [deps.Roots.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+    IntervalRootFinding = "d2bf35a9-74e0-55ec-b149-d360ff49b807"
+    SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
+    SymPyPythonCall = "bc8888f7-b21e-4b7c-a06a-5d9c9496438c"
+    Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.SHA]]
+uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+version = "0.7.0"
+
+[[deps.SIMDTypes]]
+git-tree-sha1 = "330289636fb8107c5f32088d2741e9fd7a061a5c"
+uuid = "94e857df-77ce-4151-89e5-788b33177be4"
+version = "0.1.0"
+
+[[deps.SLEEF_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl"]
+git-tree-sha1 = "e917bfc9d0aabb490b94bce45c700781ce47c65e"
+uuid = "63e82ce6-3d80-5af4-a84c-484b71ab98bb"
+version = "3.9.0+2"
+
+[[deps.SPIRVIntrinsics]]
+deps = ["GPUToolbox", "LLVM", "UnsafeAtomics"]
+git-tree-sha1 = "2ee2b6f667d53d1f03079ce7179f7de7ef5058b7"
+uuid = "71d1d633-e7e8-4a92-83a1-de8814b09ba8"
+version = "1.6.0"
+
+    [deps.SPIRVIntrinsics.extensions]
+    SPIRVIntrinsicsSIMDExt = "SIMD"
+    SPIRVIntrinsicsSIMDSpecialFunctionsExt = ["SIMD", "SpecialFunctions"]
+    SPIRVIntrinsicsSpecialFunctionsExt = "SpecialFunctions"
+
+    [deps.SPIRVIntrinsics.weakdeps]
+    GPUCompiler = "61eb1bfa-7361-4325-ad38-22787b887f55"
+    SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"
+    SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
+
+[[deps.SPIRV_LLVM_Backend_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
+git-tree-sha1 = "b277c67df09ba43963be35adc4acf6b6262a9066"
+uuid = "4376b9bf-cff8-51b6-bb48-39421dff0d0c"
+version = "23.1.4+5"
+
+[[deps.SPIRV_Tools_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "783c358eff59056d7e703a644f5179270c43226a"
+uuid = "6ac6d60f-d740-5983-97d7-a4482c0689f4"
+version = "2025.4.0+0"
+
+[[deps.SciMLPublic]]
+deps = ["PrecompileTools"]
+git-tree-sha1 = "74685afb51732a464fbce79a72708f7c4203ceb7"
+uuid = "431bcebd-1456-4ced-9d72-93c2757fff0b"
+version = "1.3.0"
+
+[[deps.ScopedValues]]
+deps = ["HashArrayMappedTries", "Logging"]
+git-tree-sha1 = "67a144433c4ce877ee6d1ada69a124d6b1ecf7be"
+uuid = "7e506255-f358-4e82-b7e4-beb19740aa63"
+version = "1.6.2"
+
+[[deps.Scratch]]
+deps = ["Dates"]
+git-tree-sha1 = "9b81b8393e50b7d4e6d0a9f14e192294d3b7c109"
+uuid = "6c6a2e73-6563-6170-7368-637461726353"
+version = "1.3.0"
+
+[[deps.Serialization]]
+uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+
+[[deps.Setfield]]
+deps = ["ConstructionBase", "Future", "MacroTools", "StaticArraysCore"]
+git-tree-sha1 = "89880a2cca5cabc68c9023f58e544beda1d2fc1f"
+uuid = "efcf1570-3423-57d1-acb7-fd33fddbac46"
+version = "1.2.0"
+
+[[deps.SimpleTraits]]
+deps = ["InteractiveUtils", "MacroTools"]
+git-tree-sha1 = "7ddb0b49c109481b046972c0e4ab02b2127d6a75"
+uuid = "699a6c99-e7fa-54fc-8d76-47d257e15c1d"
+version = "0.9.6"
+
+[[deps.Sockets]]
+uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
+
+[[deps.SparseArrays]]
+deps = ["Libdl", "LinearAlgebra", "Random", "Serialization", "SuiteSparse_jll"]
+uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+version = "1.10.0"
+
+[[deps.SparseConnectivityTracer]]
+deps = ["ADTypes", "DocStringExtensions", "FillArrays", "LinearAlgebra", "Random", "SparseArrays"]
+git-tree-sha1 = "277d8929a56912e7342458d4db22ee45e4c0e75c"
+uuid = "9f842d2f-2579-4b1d-911e-f412cf18a3f5"
+version = "1.2.4"
+
+    [deps.SparseConnectivityTracer.extensions]
+    SparseConnectivityTracerChainRulesCoreExt = "ChainRulesCore"
+    SparseConnectivityTracerLogExpFunctionsExt = "LogExpFunctions"
+    SparseConnectivityTracerNNlibExt = "NNlib"
+    SparseConnectivityTracerNaNMathExt = "NaNMath"
+    SparseConnectivityTracerSpecialFunctionsExt = "SpecialFunctions"
+
+    [deps.SparseConnectivityTracer.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
+    NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
+    NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
+    SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
+
+[[deps.SparseMatrixColorings]]
+deps = ["ADTypes", "DocStringExtensions", "LinearAlgebra", "PrecompileTools", "Random", "SparseArrays"]
+git-tree-sha1 = "0730f14b07c68fd3b3a6fae89a829a5124a7ae7e"
+uuid = "0a514795-09f3-496d-8182-132a7b665d35"
+version = "0.4.29"
+
+    [deps.SparseMatrixColorings.extensions]
+    SparseMatrixColoringsAMDGPUExt = "AMDGPU"
+    SparseMatrixColoringsCUDAExt = ["CUDA", "cuSPARSE"]
+    SparseMatrixColoringsCliqueTreesExt = "CliqueTrees"
+    SparseMatrixColoringsColorsExt = "Colors"
+    SparseMatrixColoringsGPUArraysExt = "GPUArrays"
+    SparseMatrixColoringsJuMPExt = ["JuMP", "MathOptInterface"]
+
+    [deps.SparseMatrixColorings.weakdeps]
+    AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e"
+    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+    CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
+    Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
+    GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+    JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+    MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
+    cuSPARSE = "b26da814-b3bc-49ef-b0ee-c816305aa060"
+
+[[deps.SparsityTracing]]
+deps = ["DiffRules", "SparseArrays", "SpecialFunctions"]
+git-tree-sha1 = "c627b7f55be476ac10792816cc38c0dafe38c8b4"
+uuid = "06eadbd4-12ad-4cbc-ab6e-10f8370940a5"
+version = "0.2.6"
+
+[[deps.SpecialFunctions]]
+deps = ["IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
+git-tree-sha1 = "d1a08b3cb5d1470a2b6dc98ba644f1436d5a740f"
+uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
+version = "2.9.2"
+
+    [deps.SpecialFunctions.extensions]
+    SpecialFunctionsChainRulesCoreExt = "ChainRulesCore"
+
+    [deps.SpecialFunctions.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+
+[[deps.Static]]
+deps = ["CommonWorldInvalidations", "IfElse", "PrecompileTools", "SciMLPublic"]
+git-tree-sha1 = "474a5283ad435618090122872eea6a8165ea6bcf"
+uuid = "aedffcd0-7271-4cad-89d0-dc628f76c6d3"
+version = "1.4.6"
+
+[[deps.StaticArrayInterface]]
+deps = ["ArrayInterface", "Compat", "IfElse", "LinearAlgebra", "PrecompileTools", "SciMLPublic", "Static"]
+git-tree-sha1 = "2a635e15d5035c53b345077c947f31ff91744078"
+uuid = "0d7ed370-da01-4f52-bd93-41d350b8b718"
+version = "1.10.0"
+
+    [deps.StaticArrayInterface.extensions]
+    StaticArrayInterfaceOffsetArraysExt = "OffsetArrays"
+    StaticArrayInterfaceStaticArraysExt = "StaticArrays"
+
+    [deps.StaticArrayInterface.weakdeps]
+    OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[[deps.StaticArrays]]
+deps = ["LinearAlgebra", "PrecompileTools", "Random", "StaticArraysCore"]
+git-tree-sha1 = "c8bf24c3f713c724e7bceaf9d0bb6729dbd3c8cc"
+uuid = "90137ffa-7385-5640-81b9-e52037218182"
+version = "1.9.25"
+
+    [deps.StaticArrays.extensions]
+    StaticArraysChainRulesCoreExt = "ChainRulesCore"
+    StaticArraysStatisticsExt = "Statistics"
+
+    [deps.StaticArrays.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[[deps.StaticArraysCore]]
+git-tree-sha1 = "bf7e2d0d9ed9ac2a652fd598c0f784910cc759f2"
+uuid = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
+version = "1.4.5"
+
+[[deps.Statistics]]
+deps = ["LinearAlgebra", "SparseArrays"]
+uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+version = "1.10.0"
+
+[[deps.StrideArraysCore]]
+deps = ["ArrayInterface", "CloseOpenIntervals", "IfElse", "LayoutPointers", "LinearAlgebra", "ManualMemory", "SIMDTypes", "Static", "StaticArrayInterface", "ThreadingUtilities"]
+git-tree-sha1 = "5316097111523c9a970596a5b33cfea5f92e8581"
+uuid = "7792a7ef-975c-4747-a70f-980b88e8d1da"
+version = "0.5.9"
+
+[[deps.StringManipulation]]
+deps = ["PrecompileTools", "StyledStrings"]
+git-tree-sha1 = "9e3a02d73a8f0a9be04e677dbef758aab40f8bea"
+uuid = "892a3eda-7b42-436c-8928-eab12a02cf0e"
+version = "0.6.1"
+
+[[deps.StyledStrings]]
+deps = ["PrecompileTools", "TOML"]
+git-tree-sha1 = "711c9650010c95814911c2005ea04e70e70e65ed"
+uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
+version = "1.0.3"
+
+[[deps.SuiteSparse_jll]]
+deps = ["Artifacts", "Libdl", "libblastrampoline_jll"]
+uuid = "bea87d4a-7f5b-5778-9afe-8cc45184846c"
+version = "7.2.1+1"
+
+[[deps.SymRCM]]
+deps = ["LinearAlgebra", "SparseArrays", "Test"]
+git-tree-sha1 = "fba6b5d399ff571ab63b4f93b51360050c321b18"
+uuid = "286e6d88-80af-4590-acc9-0001b223b9bd"
+version = "0.2.2"
+
+[[deps.TOML]]
+deps = ["Dates"]
+uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+version = "1.0.3"
+
+[[deps.TableTraits]]
+deps = ["IteratorInterfaceExtensions"]
+git-tree-sha1 = "c06b2f539df1c6efa794486abfb6ed2022561a39"
+uuid = "3783bdb8-4a98-5b6b-af9a-565f29a5fe9c"
+version = "1.0.1"
+
+[[deps.Tables]]
+deps = ["DataAPI", "DataValueInterfaces", "IteratorInterfaceExtensions", "OrderedCollections", "TableTraits"]
+git-tree-sha1 = "a94d9bdda1b7bed0046cea645639ab3f62196fac"
+uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+version = "1.14.0"
+
+[[deps.Tar]]
+deps = ["ArgTools", "SHA"]
+uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
+version = "1.10.0"
+
+[[deps.Test]]
+deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
+uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[[deps.ThreadTeams]]
+deps = ["ScopedValues"]
+git-tree-sha1 = "8c7b37db670022a04816602587e99f27ee321f40"
+uuid = "100744f9-5cbb-42a9-938e-f15a20f71997"
+version = "2.0.0"
+
+    [deps.ThreadTeams.extensions]
+    ThreadTeamsEnzymeCoreExt = "EnzymeCore"
+
+    [deps.ThreadTeams.weakdeps]
+    EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
+
+[[deps.ThreadingUtilities]]
+deps = ["ManualMemory"]
+git-tree-sha1 = "e12924c87b5476110130841e973ba9b9f20ae599"
+uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
+version = "0.5.7"
+
+[[deps.TimerOutputs]]
+deps = ["ExprTools", "Printf"]
+git-tree-sha1 = "3748bd928e68c7c346b52125cf41fff0de6937d0"
+uuid = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
+version = "0.5.29"
+
+    [deps.TimerOutputs.extensions]
+    FlameGraphsExt = "FlameGraphs"
+
+    [deps.TimerOutputs.weakdeps]
+    FlameGraphs = "08572546-2f56-4bcf-ba4e-bab62c3a3f89"
+
+[[deps.Tracy]]
+deps = ["ExprTools", "LibTracyClient_jll", "Libdl"]
+git-tree-sha1 = "73e3ff50fd3990874c59fef0f35d10644a1487bc"
+uuid = "e689c965-62c8-4b79-b2c5-8359227902fd"
+version = "0.1.6"
+
+    [deps.Tracy.extensions]
+    TracyProfilerExt = "TracyProfiler_jll"
+
+    [deps.Tracy.weakdeps]
+    TracyProfiler_jll = "0c351ed6-8a68-550e-8b79-de6f926da83c"
+
+[[deps.TranscodingStreams]]
+git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
+uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
+version = "0.11.3"
+
+[[deps.UUIDs]]
+deps = ["Random", "SHA"]
+uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+
+[[deps.Unicode]]
+uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[deps.UnsafeAtomics]]
+deps = ["LLVM"]
+git-tree-sha1 = "74ac5e0e702972da953ffc981094617070be582d"
+uuid = "013be700-e6cd-48c3-b4a1-df204f14c38f"
+version = "0.4.0"
+weakdeps = ["GPUCompiler"]
+
+    [deps.UnsafeAtomics.extensions]
+    UnsafeAtomicsGPUCompilerExt = "GPUCompiler"
+
+[[deps.XML]]
+git-tree-sha1 = "07d9237ceb838d987763ac2a5bcd4e29764ae153"
+uuid = "72c71f33-b9b6-44de-8c94-c961784809e2"
+version = "0.4.10"
+
+    [deps.XML.extensions]
+    XMLAbstractTreesExt = "AbstractTrees"
+    XMLStringViewsExt = "StringViews"
+
+    [deps.XML.weakdeps]
+    AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
+    StringViews = "354b36f9-a18e-4713-926e-db85100087ba"
+
+[[deps.XML2_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Libiconv_jll", "Zlib_jll"]
+git-tree-sha1 = "b826aedca5fce2e3c91904e338c279e5c1a2da74"
+uuid = "02c8fc9c-b97f-50b9-bbe4-9be30ff0a78a"
+version = "2.15.4+0"
+
+[[deps.Xorg_libpciaccess_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
+git-tree-sha1 = "58972370b81423fc546c56a60ed1a009450177c3"
+uuid = "a65dc6b1-eb27-53a1-bb3e-dea574b5389e"
+version = "0.19.0+0"
+
+[[deps.ZipArchives]]
+deps = ["ArgCheck", "CodecInflate64", "CodecZlib", "InputBuffers", "PrecompileTools", "TranscodingStreams", "Zlib_jll"]
+git-tree-sha1 = "3e6acd912522133953125645b263934ae2ac745e"
+uuid = "49080126-0e18-4c2a-b176-c102e4b3760c"
+version = "2.6.1"
+
+[[deps.Zlib_jll]]
+deps = ["Libdl"]
+uuid = "83775a58-1f1d-513f-b197-d71354ab007a"
+version = "1.2.13+1"
+
+[[deps.Zstd_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "446b23e73536f84e8037f5dce465e92275f6a308"
+uuid = "3161d3a3-bdf6-5164-811a-617609db77b4"
+version = "1.5.7+1"
+
+[[deps.aws_c_auth_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_cal_jll", "aws_c_http_jll", "aws_c_sdkutils_jll"]
+git-tree-sha1 = "7945f94b714d20b55aee2510b511afee0ee17ad2"
+uuid = "2b3700d1-4306-52e2-a478-c162f0c514be"
+version = "1.0.1+0"
+
+[[deps.aws_c_cal_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_common_jll"]
+git-tree-sha1 = "60a8d3fafed6f7ed8b3114793885a03330aa8e51"
+uuid = "70f11efc-bab2-57f1-b0f3-22aad4e67c4b"
+version = "1.0.0+0"
+
+[[deps.aws_c_common_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "f5ce8191ad02a5a4127d37ab5f474aee5cf91ad4"
+uuid = "73048d1d-b8c4-5092-a58d-866c5e8d1e50"
+version = "1.0.3+1"
+
+[[deps.aws_c_compression_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_common_jll"]
+git-tree-sha1 = "6efd591b9fae7919266d3b342a18a6e6280850f9"
+uuid = "73a04cd5-f3d7-5bac-9290-e8adb709f224"
+version = "1.0.0+1"
+
+[[deps.aws_c_http_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_compression_jll", "aws_c_io_jll"]
+git-tree-sha1 = "e4108b4a2201cb9987ddd36714fdcfd572d6bb24"
+uuid = "3254fc65-9028-534d-aa9d-d76d128babc6"
+version = "1.0.0+0"
+
+[[deps.aws_c_io_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_cal_jll", "aws_c_common_jll", "s2n_tls_jll"]
+git-tree-sha1 = "b816756403a8db80e32fc23a4a1aae240d2168ca"
+uuid = "13c41daa-f319-5298-b5eb-5754e0170d52"
+version = "1.0.0+0"
+
+[[deps.aws_c_s3_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_auth_jll", "aws_c_common_jll", "aws_c_http_jll", "aws_checksums_jll", "s2n_tls_jll"]
+git-tree-sha1 = "1ebf5d4fa9c5248c3c1066124ef41d06de05a03a"
+uuid = "bd1f34fb-993f-5903-a121-aaf302eed6d4"
+version = "1.3.1+0"
+
+[[deps.aws_c_sdkutils_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_common_jll"]
+git-tree-sha1 = "0162699e5aa99420f04a9606a9d7b38a872a81ee"
+uuid = "1282aa60-004d-510b-9f52-12498d409daa"
+version = "1.0.0+0"
+
+[[deps.aws_checksums_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "aws_c_common_jll"]
+git-tree-sha1 = "ee1f5427815c98355b0b0454b5fe79806ffdf935"
+uuid = "b2a88e68-78e7-5e94-8c20-c02986ec140e"
+version = "1.0.1+1"
+
+[[deps.dlfcn_win32_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "e141d67ffe550eadfb5af1bdbdaf138031e4805f"
+uuid = "c4b69c83-5512-53e3-94e6-de98773c479f"
+version = "1.4.2+0"
+
+[[deps.libaec_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "31e4c16405815484827f75a38fb7eb17432e72e3"
+uuid = "477f73a3-ac25-53e9-8cc3-50b2fa2566f0"
+version = "1.1.8+0"
+
+[[deps.libblastrampoline_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
+version = "5.11.0+0"
+
+[[deps.mpif_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "MPIABI_jll", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "TOML"]
+git-tree-sha1 = "52e322f7a6d418576cdeb043dd2a7f7ad9a8abd0"
+uuid = "9aeb927a-4695-514f-a259-621a69f20ec0"
+version = "1.0.1+0"
+
+[[deps.nghttp2_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
+version = "1.52.0+1"
+
+[[deps.p7zip_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
+version = "17.4.0+2"
+
+[[deps.pocl_standalone_jll]]
+deps = ["Artifacts", "Hwloc_jll", "JLLWrappers", "Libdl", "SLEEF_jll", "Zstd_jll"]
+git-tree-sha1 = "810c85e4c782dabe1f43cc43e3b9961265194d4d"
+uuid = "54f56a70-6062-5590-a942-1226658f6c83"
+version = "7.2.3+9"
+
+[[deps.s2n_tls_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "6f9611b1b99beb089154f19a4031579f3a818cbd"
+uuid = "cddc5d3d-934d-5d3a-9747-62fc12ea3f48"
+version = "1.7.12+0"
+
+[[deps.tree_sitter_gcn_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "7aea9f731552967bda93cb7cbf6925de65bc38d5"
+uuid = "8b5cbfcf-8811-596e-8e87-0e51e05ee4b2"
+version = "0.1.0+0"
+
+[[deps.tree_sitter_llvm_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "2fb7d0e3a8abf532fa922766ca130bf814df1e70"
+uuid = "44208993-ee63-5069-9443-8e43b04a9b30"
+version = "1.1.0+0"
+
+[[deps.tree_sitter_ptx_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "e6ad264eebe3e34f03bca6b5e811d80e0f4797a2"
+uuid = "71e3f6e6-c059-5e7c-a2f2-d560fdad7ce5"
+version = "0.1.0+0"
+
+[[deps.tree_sitter_spirv_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "7d8c03949bab84b23fe0500d89979e786d54a653"
+uuid = "f0e86581-c468-54df-a4de-3266e11a3c86"
+version = "0.1.0+0"
+''',
+'inputs/BASE.DATA': r'''-- Two-phase oil/water development case. Length in meters, time in days, absolute pressure in bar. All wells are completed in K=1.
+RUNSPEC
+TITLE
+ TWO PHASE FIELD DEVELOPMENT
+DIMENS
+ 60 50 1 /
+OIL
+WATER
+METRIC
+UNIFOUT
+NOECHO
+TABDIMS
+ 1 1 201 10 /
+WELLDIMS
+ 4 1 2 4 /
+START
+ 01 JAN 2001 /
+
+GRID
+INIT
+DX
+ 3000*32 /
+DY
+ 3000*32 /
+DZ
+ 3000*10 /
+TOPS
+ 3000*1000 /
+ACTNUM
+ 3000*1 /
+-- Grid 60 x 50 x 1, I varies fastest. Porosity is a fraction and permeability is in mD.
+PORO
+0.147972 0.140329 0.13096 0.111226 0.113425 0.153293 0.147416 0.144591 0.134764 0.11535
+0.100926 0.120367 0.078457 0.124486 0.139136 0.143772 0.131066 0.169249 0.234758 0.227561
+0.224574 0.172943 0.131768 0.151251 0.090468 0.051188 0.079519 0.041583 0.10097 0.099805
+0.065179 0.044807 0.035856 0.104537 0.093961 0.075123 0.096452 0.139074 0.150656 0.134404
+0.179634 0.173826 0.19804 0.194839 0.265708 0.263915 0.285172 0.286503 0.228455 0.177117
+0.119024 0.105022 0.085165 0.076493 0.084648 0.049915 0.070748 0.1227 0.13183 0.172648
+0.16575 0.089519 0.118584 0.088855 0.121487 0.128425 0.185242 0.161448 0.132148 0.164746
+0.105111 0.133904 0.116453 0.141761 0.134552 0.188116 0.211936 0.219222 0.229955 0.224427
+0.191275 0.116116 0.097114 0.112026 0.068959 0.077196 0.047714 0.06165 0.106177 0.097065
+0.05043 0.0658 0.054531 0.081691 0.068882 0.087133 0.118829 0.156994 0.101249 0.067925
+0.170976 0.207914 0.214422 0.192163 0.219943 0.237235 0.23534 0.277843 0.225029 0.143073
+0.025022 0.076701 0.062217 0.043044 0.09159 0.07643 0.130265 0.114045 0.174245 0.149143
+0.192446 0.122771 0.113849 0.150437 0.165034 0.120016 0.191993 0.157769 0.162341 0.165554
+0.148326 0.141459 0.152534 0.127085 0.16464 0.156966 0.209269 0.225625 0.229913 0.178551
+0.155889 0.136946 0.112106 0.10783 0.105153 0.051319 0.071231 0.123236 0.118591 0.082083
+0.104303 0.100479 0.136299 0.080944 0.114563 0.133483 0.174717 0.122257 0.130606 0.095244
+0.173149 0.18394 0.199464 0.253409 0.229821 0.246663 0.258357 0.221438 0.158319 0.121252
+0.082816 0.070941 0.042615 0.069006 0.08774 0.088394 0.10105 0.131125 0.146789 0.147845
+0.170416 0.159172 0.155019 0.189647 0.137236 0.12753 0.182573 0.238898 0.195084 0.149562
+0.155624 0.144953 0.127738 0.173291 0.215446 0.187113 0.223676 0.228895 0.20264 0.160361
+0.178422 0.16119 0.142765 0.100626 0.106628 0.067429 0.099548 0.102148 0.094483 0.058104
+0.098599 0.095242 0.135054 0.093744 0.140176 0.123297 0.127873 0.112139 0.179419 0.130731
+0.144777 0.212242 0.261075 0.264432 0.276512 0.230042 0.266509 0.225199 0.182905 0.171715
+0.095287 0.071189 0.063343 0.099124 0.120115 0.106021 0.120617 0.112278 0.17321 0.174935
+0.194777 0.148674 0.146128 0.160433 0.137972 0.118001 0.210833 0.221402 0.196684 0.202184
+0.157097 0.091022 0.142639 0.1861 0.187293 0.187782 0.215601 0.187947 0.162752 0.178253
+0.176346 0.130607 0.117428 0.090146 0.094847 0.090126 0.079864 0.089869 0.103852 0.074968
+0.055092 0.098589 0.091277 0.112774 0.160578 0.108673 0.134641 0.146687 0.124529 0.145334
+0.219778 0.225239 0.235705 0.267495 0.247135 0.243581 0.292738 0.248488 0.217442 0.167818
+0.09544 0.092607 0.077094 0.100773 0.133917 0.129329 0.108449 0.121711 0.154095 0.165798
+0.171619 0.106874 0.132925 0.143516 0.220159 0.154088 0.151754 0.183797 0.150673 0.140759
+0.139189 0.141137 0.174932 0.149644 0.19968 0.187133 0.199206 0.190057 0.168905 0.185218
+0.204842 0.173996 0.110732 0.09879 0.121934 0.099454 0.078209 0.054168 0.07565 0.070622
+0.06582 0.103161 0.104126 0.136405 0.157898 0.151915 0.189317 0.214985 0.18143 0.205357
+0.193858 0.234569 0.238915 0.273382 0.237889 0.264395 0.240395 0.265616 0.228076 0.170159
+0.152694 0.134065 0.170358 0.156392 0.154991 0.137683 0.105521 0.153407 0.141097 0.157669
+0.188324 0.153559 0.133546 0.127277 0.197626 0.167823 0.145446 0.143563 0.133134 0.137247
+0.158652 0.142311 0.171721 0.170915 0.190356 0.159608 0.172295 0.175504 0.23776 0.210912
+0.217439 0.157936 0.108241 0.087485 0.131413 0.077969 0.069163 0.087619 0.091346 0.088867
+0.075403 0.105897 0.105977 0.165012 0.138414 0.163758 0.210608 0.205021 0.155235 0.176273
+0.19492 0.221611 0.215347 0.219063 0.241108 0.296605 0.291258 0.28363 0.189992 0.162505
+0.132978 0.165261 0.1698 0.183181 0.170788 0.173532 0.161649 0.140543 0.181434 0.183222
+0.200514 0.165953 0.146321 0.160017 0.163801 0.135996 0.192004 0.155599 0.140455 0.130701
+0.141187 0.172759 0.160174 0.22812 0.205722 0.231333 0.21947 0.19933 0.263159 0.200924
+0.152576 0.099407 0.0981 0.087752 0.101423 0.126591 0.087654 0.127253 0.108626 0.113328
+0.119478 0.166375 0.135025 0.141833 0.176122 0.182013 0.174919 0.171043 0.179607 0.195911
+0.196319 0.203913 0.235854 0.215537 0.198618 0.263677 0.275951 0.23729 0.218097 0.155451
+0.135442 0.115412 0.153502 0.181844 0.177594 0.205359 0.18227 0.152489 0.175088 0.208057
+0.207776 0.163681 0.10892 0.161098 0.206146 0.198708 0.188472 0.145679 0.175012 0.154354
+0.191499 0.198295 0.211793 0.256045 0.25068 0.254163 0.26339 0.229639 0.22406 0.21076
+0.162115 0.15144 0.09637 0.079529 0.094645 0.098335 0.076283 0.130749 0.143543 0.11418
+0.123457 0.128688 0.143007 0.135314 0.138939 0.180763 0.180823 0.163816 0.107789 0.167171
+0.206749 0.222337 0.164057 0.18635 0.199255 0.221313 0.238924 0.170782 0.175297 0.128521
+0.123913 0.11323 0.157584 0.152415 0.168207 0.177941 0.133105 0.132402 0.184026 0.165437
+0.195362 0.176239 0.137396 0.193886 0.175312 0.238722 0.202862 0.191223 0.165122 0.131101
+0.1762 0.19809 0.174158 0.213704 0.21578 0.230536 0.29905 0.234015 0.215205 0.209633
+0.1323 0.108329 0.070953 0.081688 0.071345 0.086585 0.098923 0.10872 0.104992 0.147099
+0.166082 0.159165 0.126946 0.171851 0.14539 0.2157 0.204074 0.164497 0.123453 0.165995
+0.146905 0.15733 0.16453 0.19727 0.222228 0.241956 0.233211 0.226835 0.174561 0.144967
+0.119822 0.145434 0.142845 0.175986 0.152793 0.157327 0.170996 0.11324 0.173698 0.157985
+0.137584 0.205457 0.16596 0.191042 0.223971 0.197514 0.201183 0.199309 0.198679 0.16484
+0.140171 0.12176 0.113887 0.201998 0.210188 0.22653 0.237246 0.215452 0.165105 0.178552
+0.155225 0.133166 0.089326 0.052738 0.048728 0.057303 0.054842 0.093652 0.141026 0.16121
+0.188467 0.168995 0.152474 0.162436 0.168168 0.189693 0.150984 0.173393 0.099675 0.125204
+0.116075 0.140098 0.169367 0.175355 0.208387 0.271465 0.306508 0.251159 0.218476 0.157578
+0.119134 0.108734 0.110559 0.120138 0.099177 0.151133 0.149289 0.170175 0.1517 0.157411
+0.075477 0.125117 0.144811 0.185543 0.189642 0.218577 0.245921 0.232211 0.227254 0.202087
+0.209474 0.156172 0.170258 0.178104 0.251993 0.162148 0.182688 0.163603 0.161482 0.168347
+0.139314 0.10588 0.092577 0.062117 0.038571 0.081992 0.103874 0.053407 0.108104 0.215832
+0.198983 0.231239 0.245658 0.181557 0.172962 0.167959 0.143839 0.106874 0.130213 0.120559
+0.17535 0.190787 0.239223 0.247414 0.256534 0.252596 0.205507 0.233736 0.166232 0.167311
+0.118723 0.130516 0.110794 0.125312 0.121732 0.179685 0.162012 0.16882 0.157276 0.129917
+0.111438 0.150092 0.182262 0.190352 0.16647 0.219622 0.226344 0.271234 0.285382 0.265468
+0.205492 0.19582 0.204935 0.203392 0.199303 0.203973 0.208698 0.180423 0.167578 0.158522
+0.161422 0.135256 0.124025 0.066193 0.099498 0.125473 0.124863 0.125498 0.140963 0.187921
+0.166508 0.222555 0.25195 0.234576 0.192698 0.224998 0.179837 0.177649 0.162466 0.14772
+0.220745 0.231931 0.267692 0.305154 0.31624 0.245754 0.236207 0.189936 0.188515 0.150559
+0.145795 0.154842 0.156863 0.140872 0.173575 0.123715 0.186694 0.177619 0.190635 0.185392
+0.178151 0.203302 0.169255 0.172485 0.201518 0.225967 0.299005 0.287109 0.333002 0.275344
+0.21232 0.19186 0.177113 0.236905 0.275547 0.240775 0.181024 0.181594 0.177214 0.178847
+0.163052 0.143035 0.116788 0.08199 0.094637 0.099084 0.11613 0.122426 0.175992 0.25342
+0.247125 0.227069 0.264968 0.243825 0.236315 0.222273 0.252003 0.226517 0.220204 0.208714
+0.25721 0.292359 0.342297 0.294686 0.320701 0.258924 0.219102 0.169809 0.183359 0.196652
+0.156704 0.165795 0.176781 0.192092 0.191082 0.09929 0.162218 0.18801 0.192605 0.159435
+0.211247 0.211112 0.227938 0.1927 0.224758 0.26563 0.28946 0.281031 0.310774 0.291645
+0.253793 0.195909 0.181584 0.201593 0.240211 0.202376 0.143993 0.169983 0.20644 0.174363
+0.135541 0.098293 0.069671 0.030757 0.084437 0.095933 0.128569 0.142225 0.16252 0.253482
+0.235298 0.27658 0.302361 0.280167 0.302001 0.312965 0.273912 0.262848 0.273123 0.296885
+0.282104 0.341025 0.359705 0.33844 0.286209 0.244574 0.223712 0.182444 0.183223 0.147568
+0.135347 0.128723 0.175595 0.16734 0.189221 0.173953 0.157244 0.168284 0.189279 0.134106
+0.252347 0.22299 0.201521 0.178589 0.231771 0.241267 0.243953 0.256236 0.235 0.223365
+0.237739 0.219306 0.210904 0.236704 0.213016 0.173765 0.174669 0.197626 0.158381 0.135761
+0.089916 0.081246 0.068098 0.067693 0.076368 0.101056 0.133767 0.161895 0.175813 0.243548
+0.219696 0.244304 0.234197 0.27335 0.334879 0.331945 0.307474 0.27383 0.304037 0.295799
+0.285913 0.288414 0.348919 0.267456 0.229594 0.240224 0.221763 0.164946 0.136413 0.113097
+0.120965 0.08767 0.152851 0.214741 0.245955 0.193605 0.181227 0.197679 0.191721 0.163834
+0.258813 0.233229 0.229035 0.171568 0.226658 0.243417 0.260294 0.254192 0.218505 0.204752
+0.205324 0.190563 0.22864 0.19032 0.235583 0.167859 0.181965 0.159383 0.129111 0.113561
+0.107547 0.097391 0.115326 0.113709 0.073737 0.126849 0.113467 0.145441 0.169451 0.163456
+0.2214 0.153566 0.194822 0.281641 0.364371 0.35295 0.300424 0.278882 0.270576 0.314012
+0.300594 0.335423 0.294689 0.243925 0.198481 0.224367 0.219785 0.189284 0.127265 0.113743
+0.08666 0.113762 0.145924 0.146495 0.191403 0.177431 0.178217 0.150971 0.104364 0.129749
+0.2524 0.231179 0.222833 0.164456 0.201872 0.231392 0.239725 0.262508 0.208248 0.161801
+0.209561 0.222595 0.211417 0.208786 0.232085 0.222258 0.172361 0.188007 0.180394 0.123866
+0.146444 0.133297 0.130346 0.112312 0.072092 0.134738 0.147921 0.157454 0.145438 0.150897
+0.207606 0.172988 0.249751 0.302728 0.386701 0.352832 0.299962 0.300719 0.303409 0.275391
+0.328353 0.318673 0.315912 0.248064 0.18044 0.217843 0.189105 0.17234 0.163723 0.140346
+0.080262 0.129294 0.128856 0.124128 0.14235 0.156851 0.122904 0.090198 0.132027 0.148696
+0.24702 0.212821 0.221978 0.204213 0.237771 0.239151 0.255404 0.237908 0.17285 0.175399
+0.178586 0.194276 0.219684 0.215968 0.184802 0.170104 0.161763 0.150727 0.133708 0.13862
+0.190881 0.178293 0.182091 0.140002 0.123536 0.137113 0.152498 0.167377 0.148903 0.177726
+0.170911 0.215414 0.229025 0.325033 0.380602 0.384038 0.370083 0.290131 0.229793 0.247273
+0.264762 0.313325 0.231562 0.21883 0.153704 0.220498 0.223218 0.167011 0.108518 0.101831
+0.092363 0.097879 0.081803 0.132443 0.163098 0.166274 0.108048 0.126879 0.10646 0.127354
+0.292731 0.258536 0.230515 0.190917 0.225586 0.226095 0.196581 0.202488 0.167707 0.175663
+0.174859 0.200961 0.199273 0.179234 0.182083 0.171577 0.113423 0.157084 0.156384 0.143473
+0.154921 0.210846 0.188114 0.174209 0.108194 0.159589 0.140908 0.146798 0.155123 0.182796
+0.210869 0.221516 0.285316 0.369225 0.334179 0.282467 0.277309 0.284492 0.255153 0.259671
+0.277239 0.286865 0.281485 0.212684 0.194735 0.250739 0.208607 0.199309 0.140338 0.131293
+0.056521 0.085223 0.095115 0.148429 0.158755 0.127388 0.122949 0.064895 0.119134 0.090307
+0.224184 0.206543 0.202606 0.222704 0.234198 0.197117 0.203174 0.18156 0.172335 0.150157
+0.172188 0.211815 0.196907 0.176626 0.174519 0.195259 0.148237 0.149811 0.114168 0.183957
+0.174319 0.175203 0.209606 0.133563 0.132902 0.17288 0.191262 0.183448 0.200001 0.213883
+0.216632 0.248493 0.243912 0.273208 0.324102 0.266405 0.231688 0.270958 0.250677 0.289542
+0.260935 0.275213 0.321783 0.281678 0.237856 0.28486 0.240437 0.180897 0.191007 0.163088
+0.129561 0.128336 0.12263 0.140243 0.123757 0.087997 0.090959 0.095922 0.094505 0.061999
+0.22542 0.185845 0.202784 0.214511 0.185133 0.190338 0.225393 0.190407 0.152984 0.155531
+0.151612 0.234994 0.195266 0.221044 0.217188 0.177851 0.153866 0.160313 0.198652 0.218899
+0.209001 0.221156 0.15405 0.212125 0.149642 0.180962 0.182627 0.172145 0.193504 0.259785
+0.23338 0.259184 0.249225 0.250503 0.250664 0.262389 0.239623 0.316112 0.25056 0.284297
+0.248341 0.248899 0.30757 0.290887 0.272208 0.293853 0.285871 0.228258 0.193069 0.179614
+0.117494 0.123842 0.104467 0.092613 0.133465 0.111029 0.061087 0.083114 0.084667 0.105442
+0.159873 0.206373 0.199047 0.207967 0.209676 0.120448 0.167015 0.145536 0.109386 0.126429
+0.180844 0.194365 0.193466 0.208803 0.163264 0.193883 0.210652 0.186444 0.195643 0.235105
+0.201739 0.217076 0.188689 0.183006 0.121225 0.143774 0.142218 0.171385 0.200705 0.279491
+0.24292 0.2506 0.25832 0.27284 0.195453 0.236389 0.265732 0.238907 0.252555 0.25557
+0.264753 0.256144 0.297496 0.26423 0.298354 0.32881 0.321228 0.283606 0.213671 0.209885
+0.153253 0.140507 0.123862 0.145317 0.124979 0.140677 0.155804 0.125121 0.065951 0.080998
+0.203276 0.161361 0.194436 0.184861 0.21459 0.186241 0.147375 0.123703 0.075942 0.089138
+0.115267 0.207011 0.199681 0.179058 0.191985 0.173781 0.184226 0.175345 0.197259 0.22629
+0.210524 0.190892 0.199962 0.212999 0.166106 0.17906 0.186193 0.200126 0.209772 0.257563
+0.237078 0.211284 0.262144 0.278981 0.257095 0.245708 0.23213 0.246292 0.252925 0.257557
+0.233978 0.239233 0.253459 0.278253 0.30636 0.301499 0.335699 0.355675 0.255728 0.205847
+0.205919 0.198895 0.181241 0.153743 0.139362 0.171756 0.14784 0.130707 0.14028 0.096173
+0.222296 0.186173 0.230986 0.246396 0.183206 0.170916 0.177609 0.199861 0.139888 0.168385
+0.182595 0.241709 0.212693 0.228933 0.225841 0.246364 0.170689 0.147888 0.178621 0.141861
+0.188654 0.158456 0.182169 0.184986 0.230582 0.231384 0.235197 0.243643 0.250336 0.247353
+0.230933 0.230367 0.278972 0.251883 0.216361 0.240215 0.221032 0.254832 0.2096 0.244675
+0.241558 0.248884 0.244762 0.292225 0.299968 0.345384 0.330774 0.368911 0.303941 0.248672
+0.23644 0.209093 0.159657 0.169499 0.187017 0.181824 0.170047 0.154682 0.137713 0.135052
+0.227582 0.244914 0.233824 0.235483 0.206366 0.18608 0.168237 0.177334 0.193459 0.189959
+0.180586 0.232797 0.211229 0.233026 0.153226 0.187709 0.14186 0.129531 0.151519 0.144075
+0.132312 0.126482 0.192504 0.228598 0.260836 0.274323 0.248497 0.250816 0.225962 0.239503
+0.224162 0.251042 0.269407 0.272356 0.232395 0.250471 0.236349 0.246072 0.235058 0.221408
+0.250707 0.279489 0.262512 0.286927 0.332042 0.353539 0.382999 0.334214 0.297801 0.247804
+0.231372 0.154623 0.192233 0.173952 0.138413 0.158661 0.209366 0.118497 0.161726 0.191553
+0.193303 0.153473 0.197581 0.244442 0.229547 0.212819 0.16335 0.173502 0.161657 0.193908
+0.182504 0.189766 0.257432 0.232191 0.21914 0.209754 0.154603 0.064095 0.128956 0.144487
+0.090548 0.116686 0.165839 0.171589 0.220909 0.261822 0.263217 0.255624 0.232044 0.225706
+0.245955 0.238561 0.280075 0.294573 0.287896 0.265802 0.270229 0.248136 0.215628 0.194904
+0.247026 0.284792 0.27181 0.256654 0.300521 0.347581 0.361367 0.299351 0.312177 0.247711
+0.242188 0.194273 0.178276 0.170902 0.175849 0.1909 0.1742 0.190882 0.188873 0.202997
+0.141174 0.125588 0.158547 0.211693 0.206195 0.222138 0.205004 0.186959 0.174397 0.175757
+0.168395 0.182222 0.239046 0.210014 0.195326 0.185257 0.139522 0.137606 0.159441 0.180163
+0.150214 0.150052 0.17412 0.186193 0.214412 0.257489 0.278036 0.255185 0.22195 0.233056
+0.248403 0.224476 0.216506 0.318432 0.295232 0.291697 0.25786 0.233799 0.207987 0.226596
+0.229077 0.264737 0.281932 0.297872 0.326367 0.331338 0.341624 0.348769 0.333632 0.269356
+0.251316 0.272961 0.201734 0.185671 0.220176 0.182716 0.166168 0.184672 0.179345 0.211232
+0.134099 0.177099 0.179077 0.196784 0.198006 0.175538 0.147683 0.136074 0.166518 0.152923
+0.209823 0.202163 0.210289 0.143617 0.129971 0.21005 0.226919 0.186126 0.161906 0.155154
+0.165167 0.152392 0.203084 0.208147 0.240048 0.254254 0.254582 0.228697 0.276485 0.264112
+0.223883 0.278517 0.256569 0.271542 0.281911 0.28504 0.243387 0.218228 0.203089 0.234239
+0.254295 0.288296 0.249604 0.291406 0.297537 0.330542 0.294442 0.279156 0.289686 0.240955
+0.241304 0.281753 0.203966 0.187263 0.19907 0.223716 0.168594 0.168124 0.171762 0.198318
+0.103943 0.13465 0.141448 0.193441 0.164872 0.118763 0.125037 0.140105 0.147212 0.154645
+0.17383 0.199073 0.178378 0.093571 0.166015 0.176827 0.195021 0.183659 0.174401 0.184653
+0.163797 0.233488 0.216963 0.200774 0.239522 0.237113 0.256453 0.220223 0.247697 0.280018
+0.278756 0.281334 0.322514 0.273308 0.303079 0.262977 0.222051 0.24977 0.212087 0.21872
+0.285232 0.276873 0.263617 0.284322 0.266004 0.280946 0.273499 0.236998 0.266684 0.242174
+0.260612 0.21199 0.186421 0.236143 0.237529 0.270859 0.187036 0.222754 0.218204 0.213247
+0.135155 0.1178 0.159742 0.178536 0.10532 0.10702 0.048097 0.049877 0.091594 0.142094
+0.177503 0.17449 0.160289 0.178342 0.170056 0.167056 0.171925 0.174345 0.133405 0.172409
+0.197875 0.200521 0.209569 0.216352 0.246259 0.249845 0.285758 0.278916 0.254168 0.271017
+0.286545 0.264551 0.245029 0.230017 0.279269 0.243488 0.261235 0.246006 0.210992 0.253306
+0.26615 0.286058 0.269257 0.3095 0.282812 0.268651 0.224264 0.22244 0.228778 0.227727
+0.243314 0.247487 0.24293 0.255209 0.265566 0.239614 0.26028 0.268609 0.207114 0.189224
+0.16494 0.123085 0.132994 0.184521 0.141067 0.109564 0.039792 0.059888 0.096529 0.125963
+0.164891 0.14851 0.163069 0.187473 0.170601 0.17223 0.184674 0.167605 0.18431 0.187874
+0.219313 0.253693 0.265694 0.259547 0.263012 0.252587 0.256652 0.275153 0.241169 0.280132
+0.221959 0.205305 0.243978 0.261551 0.219836 0.20313 0.203904 0.265078 0.232266 0.255029
+0.25934 0.274999 0.294827 0.300373 0.268084 0.231782 0.248351 0.219157 0.227313 0.23926
+0.253088 0.260691 0.224185 0.230885 0.218589 0.2098 0.252936 0.255842 0.193492 0.189649
+0.216161 0.176086 0.179092 0.149474 0.107467 0.103832 0.08935 0.09116 0.116408 0.101364
+0.173528 0.141079 0.197902 0.230172 0.216111 0.174362 0.181318 0.169451 0.152201 0.146952
+0.191995 0.234663 0.259818 0.202449 0.173053 0.220413 0.22461 0.267028 0.277076 0.26099
+0.234051 0.225861 0.214456 0.262135 0.255149 0.236116 0.201156 0.251088 0.242191 0.227048
+0.299247 0.2964 0.317943 0.280474 0.291241 0.241117 0.256016 0.184872 0.240235 0.196342
+0.177861 0.227117 0.27794 0.201317 0.191917 0.184585 0.212399 0.223822 0.198658 0.209937
+0.205427 0.162211 0.180354 0.132401 0.088573 0.07722 0.072044 0.07624 0.102667 0.132121
+0.19017 0.182797 0.209941 0.215475 0.203554 0.224186 0.143048 0.167427 0.146096 0.137836
+0.142621 0.209209 0.196839 0.224489 0.211394 0.217002 0.229621 0.233349 0.265549 0.248931
+0.24639 0.270082 0.216602 0.226438 0.236777 0.249536 0.215846 0.232462 0.241999 0.262333
+0.272055 0.269941 0.285827 0.262406 0.243051 0.277641 0.265884 0.22846 0.19142 0.171735
+0.203977 0.200167 0.243627 0.26305 0.242448 0.1973 0.216962 0.274294 0.223097 0.164906
+0.176831 0.192364 0.150147 0.122513 0.07883 0.083804 0.06315 0.031014 0.10585 0.135353
+0.122937 0.11807 0.193203 0.22186 0.215289 0.186321 0.178647 0.194213 0.180214 0.162615
+0.132313 0.180591 0.218977 0.246575 0.265743 0.255095 0.263673 0.283653 0.280347 0.312023
+0.271067 0.197674 0.215455 0.234946 0.240247 0.217925 0.245448 0.245295 0.219256 0.223649
+0.22391 0.251272 0.238854 0.240574 0.287963 0.264363 0.260265 0.213017 0.207222 0.228263
+0.185879 0.189215 0.254986 0.236512 0.219543 0.20923 0.268032 0.297789 0.250384 0.229177
+0.165905 0.150523 0.164375 0.144046 0.083158 0.086569 0.066451 0.035525 0.063408 0.111965
+0.078531 0.109271 0.140411 0.242639 0.21077 0.198418 0.1611 0.143717 0.164171 0.168125
+0.193711 0.203601 0.261866 0.235097 0.232034 0.23968 0.288714 0.329585 0.330795 0.331515
+0.287102 0.256043 0.261406 0.230194 0.265161 0.270095 0.264324 0.226604 0.198243 0.218905
+0.242831 0.248869 0.189083 0.228429 0.245904 0.266928 0.262585 0.264538 0.217668 0.220505
+0.174604 0.204952 0.253077 0.188701 0.195838 0.247878 0.274119 0.321501 0.278698 0.294865
+0.167176 0.155924 0.208388 0.18732 0.101303 0.0898 0.10465 0.088347 0.076919 0.107079
+0.085429 0.110995 0.19716 0.204685 0.243954 0.212438 0.163909 0.217284 0.189389 0.128973
+0.160183 0.218805 0.245229 0.248704 0.24364 0.225439 0.270096 0.293604 0.30967 0.31405
+0.294278 0.26745 0.248033 0.22315 0.193606 0.208398 0.246467 0.22292 0.228422 0.192534
+0.251078 0.243526 0.220731 0.241285 0.278538 0.2733 0.260559 0.19934 0.194494 0.185995
+0.211658 0.260115 0.24083 0.255608 0.248928 0.289213 0.281493 0.312354 0.335045 0.289294
+0.157886 0.143124 0.102091 0.128344 0.131779 0.090416 0.122302 0.139015 0.071035 0.126825
+0.141293 0.180321 0.193786 0.223014 0.205836 0.174843 0.175231 0.202562 0.19201 0.194114
+0.215412 0.22768 0.221289 0.238343 0.279734 0.279008 0.284627 0.292528 0.280568 0.208513
+0.201489 0.234939 0.209695 0.204721 0.164356 0.183355 0.210176 0.267986 0.228258 0.215156
+0.208786 0.226835 0.243127 0.255813 0.268947 0.238816 0.212449 0.192402 0.189872 0.225326
+0.187028 0.194475 0.263723 0.230973 0.218689 0.259537 0.301094 0.32484 0.295557 0.288604
+0.15249 0.129049 0.145475 0.120709 0.181386 0.140634 0.206767 0.122169 0.137875 0.109478
+0.142441 0.119093 0.148406 0.175942 0.186368 0.196829 0.261496 0.218903 0.1719 0.204044
+0.241895 0.24825 0.210682 0.196142 0.269145 0.290834 0.290403 0.308077 0.232544 0.227893
+0.204221 0.195887 0.201102 0.186285 0.137973 0.202521 0.225725 0.211873 0.206688 0.265294
+0.207665 0.189686 0.225871 0.254572 0.236671 0.221519 0.20045 0.199529 0.177876 0.238363
+0.201503 0.213536 0.2489 0.28799 0.263234 0.312904 0.314444 0.308806 0.352077 0.299237
+0.138437 0.167811 0.173632 0.174358 0.188809 0.182692 0.154944 0.150196 0.145281 0.150473
+0.16579 0.167973 0.109416 0.187339 0.189046 0.210877 0.250842 0.196102 0.156789 0.177114
+0.179547 0.226864 0.208076 0.215322 0.235966 0.3195 0.260893 0.26545 0.212301 0.222787
+0.186271 0.198797 0.223896 0.181597 0.192165 0.181466 0.208417 0.227454 0.212038 0.185077
+0.215849 0.194117 0.226809 0.250784 0.255724 0.217897 0.199675 0.183248 0.219242 0.222152
+0.190121 0.190996 0.252623 0.297735 0.314696 0.322825 0.3326 0.315735 0.333275 0.335084
+0.152761 0.160924 0.150966 0.171748 0.206474 0.170046 0.100029 0.117543 0.131636 0.155549
+0.158359 0.14908 0.173688 0.246906 0.191813 0.223533 0.23248 0.200843 0.202387 0.221195
+0.190642 0.210285 0.204017 0.168035 0.215293 0.235335 0.176048 0.209707 0.225022 0.237346
+0.223679 0.182104 0.193757 0.224628 0.206638 0.200115 0.189293 0.182512 0.203148 0.175812
+0.184988 0.250643 0.208242 0.246811 0.266865 0.198 0.193518 0.191257 0.194109 0.22903
+0.2192 0.262316 0.241502 0.261047 0.302433 0.348676 0.371964 0.35886 0.340061 0.351336
+0.102804 0.084982 0.110242 0.107283 0.160979 0.153014 0.134644 0.150103 0.164737 0.126885
+0.169242 0.170404 0.220078 0.212912 0.18624 0.192592 0.270104 0.200824 0.210513 0.151485
+0.198122 0.21144 0.217803 0.245522 0.187809 0.214146 0.191078 0.193736 0.195921 0.234036
+0.262146 0.229415 0.215893 0.190393 0.22245 0.211969 0.166273 0.168065 0.150817 0.19522
+0.237739 0.200041 0.190865 0.225825 0.251525 0.209799 0.221996 0.213391 0.190374 0.261658
+0.237126 0.24669 0.259117 0.309632 0.317067 0.303402 0.362304 0.443317 0.390421 0.34505
+0.033761 0.094839 0.132677 0.140869 0.124865 0.087817 0.096173 0.125808 0.105271 0.124691
+0.151378 0.163969 0.179304 0.175319 0.207534 0.200937 0.245595 0.205881 0.20819 0.236512
+0.27116 0.250002 0.230763 0.196366 0.149714 0.169991 0.134306 0.2004 0.177417 0.233032
+0.272741 0.220695 0.234061 0.218428 0.234491 0.217523 0.163003 0.147313 0.194856 0.189618
+0.188417 0.188995 0.204437 0.19678 0.225712 0.209247 0.218867 0.23991 0.269499 0.22659
+0.225097 0.242966 0.307742 0.307051 0.303414 0.320726 0.371225 0.429495 0.393283 0.336916
+0.04224 0.110719 0.114801 0.130059 0.10419 0.096151 0.081837 0.089737 0.118159 0.134434
+0.157305 0.183607 0.155955 0.175266 0.20973 0.241686 0.198658 0.179163 0.195534 0.238336
+0.243083 0.255083 0.209531 0.205156 0.181506 0.160319 0.122046 0.154993 0.199669 0.20149
+0.215061 0.201634 0.24686 0.245906 0.199058 0.188131 0.128989 0.162255 0.14174 0.174835
+0.203903 0.186992 0.179815 0.139007 0.204831 0.210992 0.224876 0.282148 0.265285 0.261498
+0.274361 0.259128 0.28349 0.334988 0.31541 0.377602 0.37135 0.380065 0.387541 0.382151
+0.016605 0.104802 0.131431 0.103312 0.09764 0.077046 0.047833 0.085757 0.1469 0.153315
+0.190736 0.225386 0.25563 0.197315 0.143182 0.164665 0.196796 0.143073 0.172046 0.175806
+0.220549 0.206236 0.166869 0.188485 0.15214 0.161754 0.149317 0.165117 0.188689 0.199666
+0.192253 0.17577 0.185613 0.1995 0.186426 0.182636 0.183804 0.191002 0.183229 0.176966
+0.153858 0.164433 0.134418 0.185218 0.215609 0.172566 0.217717 0.25782 0.256025 0.247975
+0.246292 0.272481 0.25319 0.33027 0.313397 0.351883 0.385897 0.368757 0.378529 0.386965
+0.028607 0.110059 0.157007 0.112218 0.11255 0.1072 0.121308 0.128688 0.1759 0.173371
+0.281711 0.244445 0.237504 0.177215 0.149943 0.176008 0.162345 0.145704 0.160918 0.16606
+0.165148 0.175245 0.190702 0.173498 0.152041 0.169887 0.173887 0.159363 0.199292 0.174579
+0.184516 0.143267 0.186285 0.188378 0.200859 0.231442 0.213171 0.2009 0.170604 0.163182
+0.135846 0.141693 0.125413 0.221787 0.233298 0.239869 0.236119 0.188161 0.23097 0.253487
+0.283064 0.252356 0.261236 0.293582 0.319506 0.350023 0.365156 0.382534 0.390456 0.397283
+0.088665 0.099988 0.149599 0.151378 0.136764 0.150157 0.165128 0.121966 0.167356 0.183551
+0.204078 0.210185 0.213077 0.154694 0.168221 0.183681 0.166617 0.170239 0.193656 0.173113
+0.200739 0.13014 0.16871 0.155277 0.172916 0.167603 0.144815 0.14965 0.187291 0.20076
+0.235877 0.169317 0.220636 0.181188 0.178098 0.203544 0.20209 0.17422 0.185807 0.172855
+0.174926 0.132888 0.150077 0.194232 0.196565 0.266882 0.271045 0.242439 0.260181 0.271441
+0.284829 0.289789 0.243616 0.270613 0.323711 0.337074 0.341776 0.380023 0.378229 0.394341
+0.135433 0.090024 0.118741 0.130498 0.122447 0.195972 0.152322 0.155597 0.180258 0.190528
+0.202494 0.199437 0.21683 0.200131 0.161884 0.171439 0.150064 0.197263 0.180994 0.151158
+0.169148 0.150206 0.118725 0.167721 0.192939 0.178151 0.221005 0.233984 0.235303 0.244308
+0.217286 0.249035 0.229856 0.213163 0.250982 0.224921 0.199838 0.214108 0.19393 0.194613
+0.236005 0.189306 0.159844 0.179478 0.225366 0.25339 0.299279 0.230474 0.26518 0.313832
+0.29345 0.278344 0.293458 0.323666 0.329013 0.359254 0.374481 0.389366 0.373816 0.393401
+0.156427 0.122209 0.125652 0.149017 0.176192 0.16872 0.157655 0.190105 0.213394 0.14013
+0.187507 0.205564 0.264006 0.242659 0.198786 0.164384 0.113181 0.162249 0.136518 0.139774
+0.11513 0.151794 0.153631 0.141621 0.214942 0.167496 0.220524 0.246657 0.235691 0.272678
+0.283947 0.234336 0.21823 0.238081 0.262385 0.207873 0.225655 0.23702 0.176931 0.159109
+0.212271 0.166991 0.234424 0.239209 0.275047 0.252231 0.271065 0.250666 0.277434 0.311391
+0.313119 0.292758 0.350217 0.351223 0.378647 0.391416 0.370762 0.375086 0.386925 0.408021
+0.190845 0.121565 0.167872 0.176789 0.20345 0.176111 0.195065 0.238641 0.257383 0.245414
+0.254354 0.219956 0.245074 0.216542 0.173457 0.164024 0.143978 0.146981 0.164238 0.132624
+0.152099 0.144599 0.170426 0.164222 0.267952 0.284347 0.252449 0.269516 0.271107 0.280515
+0.274806 0.267169 0.257145 0.233975 0.239183 0.234996 0.286043 0.203203 0.219586 0.171521
+0.242836 0.205466 0.22592 0.210406 0.232036 0.281145 0.287937 0.285908 0.28077 0.300084
+0.335447 0.307845 0.314827 0.364418 0.392619 0.373125 0.373171 0.398949 0.363872 0.356348
+/
+PERMX
+7.62835 4.03885 6.60116 3.7738 3.62271 7.16426 7.46622 9.49406 8.1349 5.99188
+3.91344 8.10727 2.97128 8.49466 11.7895 7.764 6.50457 9.85067 53.8854 35.7084
+27.9736 7.66287 1.25903 1.55166 0.930796 0.51217 1.24489 0.857816 3.08811 3.07213
+1.5914 0.742461 0.800607 3.02238 1.43723 0.879817 2.23832 5.84761 6.56044 5.43538
+17.6731 13.5297 41.1362 33.0614 158.458 82.6664 164.996 130.187 47.612 14.6368
+7.44249 4.84485 3.65651 2.77773 2.18182 1.33768 2.78478 7.03112 6.51472 20.7407
+10.7052 1.98132 2.89136 2.85825 6.54055 5.98921 16.9096 17.6733 6.80342 7.56764
+4.18937 13.5948 7.95662 18.4594 9.81836 26.3655 55.0767 41.0184 47.3872 41.2232
+19.925 3.288 1.33063 1.04085 0.441781 1.41446 1.06714 1.27202 3.88435 2.86352
+1.07586 1.70383 1.53114 2.91754 1.3743 1.57718 5.76377 13.288 2.93138 1.54702
+13.6285 56.1573 55.8542 47.2602 47.3255 51.3887 49.5131 139.215 37.3332 7.58039
+0.878371 3.2175 1.37109 1.17399 3.99426 2.48068 8.7924 8.76781 26.4615 19.6632
+17.7106 5.21732 6.19582 10.5918 12.982 5.15694 34.0681 19.4456 15.9205 16.1767
+17.7631 18.9632 26.1688 12.3118 21.0407 21.805 47.2189 47.7633 62.7921 19.937
+5.96551 4.14878 2.14718 2.17136 2.0632 0.581669 1.63302 4.53838 6.34386 2.82886
+3.85838 3.9528 7.72059 2.82408 5.59676 6.04127 18.1715 7.00465 5.33083 2.88615
+20.8794 22.282 38.7581 132.927 98.261 85.1158 79.9747 41.9596 11.3935 4.66163
+5.04229 2.44032 0.894884 2.3036 2.97532 3.35976 4.52944 12.2364 17.1831 22.7871
+9.58388 11.0824 15.3216 29.4705 5.82498 6.62098 22.3158 47.7343 51.5742 14.1274
+43.3329 21.2919 17.1293 39.6214 42.6539 22.2342 50.9284 48.8042 24.2238 7.84365
+7.91384 7.20806 4.22001 2.18575 2.74395 1.2935 3.41521 2.97109 2.62745 1.85031
+4.37508 2.21569 7.08233 3.21111 4.1221 3.9141 5.91004 5.16409 13.6926 4.88277
+12.9693 55.9875 147.922 128.725 181.837 73.3471 102.138 48.7785 24.6031 25.3573
+5.93578 2.04273 1.54671 5.51415 8.07565 4.09397 7.72781 9.17309 45.7992 66.9998
+35.117 11.5585 10.6273 18.3173 5.93028 4.46334 46.3816 68.4905 36.3205 43.2853
+27.989 4.99397 15.167 38.4752 27.9342 26.6518 31.4401 14.7005 9.5276 11.2106
+12.5568 5.45445 2.19931 1.65944 2.17792 1.84364 2.57007 3.26733 5.8106 2.10224
+1.52309 4.47007 3.65979 4.79062 11.0209 3.33614 4.78544 6.41861 3.39625 7.69099
+57.4435 61.8919 97.253 186.253 132.099 98.9139 218.949 66.7055 34.6857 12.8601
+3.7641 5.31032 3.92004 5.13374 4.95139 6.50453 6.7495 14.4293 39.4397 41.1245
+20.1856 4.5578 7.15487 8.29941 59.8848 9.67495 9.95057 19.9662 8.64997 9.66465
+10.0591 9.65032 38.68 16.3553 40.82 30.793 24.8883 13.1601 6.48218 13.2503
+21.1232 11.8212 4.32496 3.78951 5.41236 2.43943 2.61484 1.98122 3.00627 2.24703
+2.0488 5.55844 5.09769 7.09221 11.2569 6.04015 12.5018 19.0564 8.73149 22.3956
+20.2501 76.712 92.3479 200.801 95.8014 216.139 154.411 134.089 48.4537 7.76506
+9.38466 8.5251 18.1113 13.4201 12.7564 10.7767 6.96351 19.668 25.644 47.9086
+36.7366 16.2034 7.99347 6.14896 30.1729 16.0259 10.3094 9.797 3.54067 4.70457
+12.1397 12.7788 33.601 28.5505 27.0398 12.6101 7.76588 9.13266 32.7103 20.6781
+36.2045 14.5871 6.16043 4.15687 8.57666 2.32032 2.52943 3.72705 3.83927 3.55414
+2.35995 4.50693 2.57774 9.7328 7.0609 5.85894 15.3599 13.9357 7.20296 14.7977
+27.8341 64.5637 37.2131 97.5577 90.2531 315.395 466.917 310.714 38.0354 13.6568
+7.15633 13.8062 18.851 36.89 26.143 32.0667 18.787 15.0812 43.5712 42.4669
+35.2843 23.1947 21.8008 25.0348 29.8865 11.556 26.3402 5.64492 4.04891 2.53338
+7.81086 29.4304 17.3356 117.201 40.7035 55.7175 27.55 15.7276 82.7414 14.7918
+7.52954 3.72065 7.00457 4.79215 5.98537 14.1591 3.41908 4.35597 4.01701 9.06687
+7.24602 20.7625 5.46266 7.01385 14.1368 5.55641 6.9742 13.3336 8.06251 15.6466
+24.551 45.4061 75.9871 80.2355 37.6621 154.612 219.777 135.033 99.4995 29.9368
+9.86667 5.14481 14.1317 41.1717 42.7507 69.938 70.3933 35.3459 67.4666 79.0923
+91.4847 40.6305 15.0065 44.5453 61.5374 41.7214 24.0839 5.98118 12.5148 8.70925
+22.0323 27.0736 44.726 79.7024 80.3792 68.4281 108.625 55.3159 32.2337 35.0923
+19.1645 17.0876 5.93077 4.04921 3.89318 4.74693 2.44717 11.1874 11.2212 8.30951
+5.66603 7.27567 8.70484 6.20137 5.47108 15.0068 19.2071 12.8842 3.55109 12.7625
+39.4981 84.7635 28.8318 38.0359 31.5786 68.969 109.677 25.882 36.0534 17.5694
+11.2541 4.82554 22.1748 31.5197 58.0877 52.2838 30.4774 27.0311 102.734 57.778
+64.6858 53.3158 16.836 40.6083 27.1215 59.9799 37.8658 29.6063 9.82437 6.36677
+16.707 17.77 9.08237 29.4895 34.0527 42.7992 174.732 54.9554 35.2315 35.3904
+9.79062 6.8988 3.54242 4.4516 3.1142 2.40508 2.61942 4.48909 3.8002 18.7693
+18.4975 11.8583 5.2845 11.7735 7.65626 54.5241 45.7104 17.8551 8.52231 23.0062
+16.2128 46.6508 42.2073 48.1347 79.1977 130.936 122.531 74.32 30.7687 21.2208
+12.5787 25.0309 23.7188 58.8289 37.8014 26.7907 34.3079 17.1487 104.337 62.5252
+15.8061 86.0056 29.092 54.4416 85.5988 37.4374 27.4813 24.8733 30.8742 7.31761
+7.72658 3.00643 3.06273 36.4814 27.2449 41.5327 56.4089 31.738 18.1265 17.3559
+12.8923 11.6237 6.34235 2.20057 1.70642 1.36543 1.61989 3.23262 12.1015 21.6203
+32.9737 14.0187 8.0373 14.6656 22.941 34.6594 17.4639 36.948 6.49647 15.9971
+15.9983 28.3332 49.7788 42.192 123.888 282.595 401.113 106.337 61.9978 25.2464
+15.5853 14.1999 19.2486 22.3512 13.2513 27.3713 27.3343 51.3722 53.4593 48.4271
+4.6417 7.18294 18.1018 41.3806 26.4439 41.5644 62.3529 57.0328 75.8561 26.7039
+36.9382 10.3085 18.2051 12.9271 50.8415 7.64391 9.56954 7.52674 13.4501 11.353
+7.74768 3.94851 5.56901 3.10886 1.3877 3.71029 3.9522 1.94623 5.31905 45.5971
+27.7281 34.9846 70.0204 27.2869 33.6694 21.3838 19.0672 9.73388 16.4058 9.9229
+60.9817 72.1549 166.116 254.31 363.007 270.612 48.2968 112.602 28.9847 23.3959
+14.03 23.387 19.2429 16.8056 13.109 37.0299 27.3088 34.0497 59.5686 14.434
+6.73712 18.0502 32.8469 61.2883 22.2111 66.0106 61.0477 138.033 202.898 115.473
+19.6627 20.9958 31.9412 23.2019 16.3984 19.6254 16.6568 12.8253 10.4205 11.0123
+11.3672 9.0024 10.1004 3.92611 9.41976 7.61944 5.63683 8.20955 9.19557 20.1509
+15.7337 41.9842 102.144 87.3574 37.869 76.8772 37.4562 47.7371 41.5986 21.1583
+112.778 156.147 327.888 919.338 1781.26 162.73 103.358 48.3543 41.2832 20.8211
+16.9892 24.2653 65.2473 30.8788 40.9808 6.33752 37.0348 33.6987 48.3644 51.4478
+23.989 53.1914 31.8355 32.4404 35.1574 49.2055 225.128 181.809 475.665 94.8362
+21.0259 20.2326 17.6654 55.2818 101.236 26.9223 12.2561 20.3814 14.6504 18.0476
+14.5448 11.1547 7.19099 4.21683 9.66141 5.36894 9.90163 9.71096 17.0372 74.1882
+107.196 75.5865 142.082 65.2354 88.5305 71.0443 152.021 72.9442 69.0625 63.7102
+140.839 487.549 2031.27 512.263 1386.97 157.978 102.688 32.6682 30.9009 52.2245
+21.7307 21.2284 79.3485 96.8616 61.4248 9.19567 31.3197 40.7983 38.8721 31.0897
+33.4725 54.6652 105.306 50.9404 62.2254 131.987 229.275 138.758 248.005 105.855
+29.6013 14.8923 19.7204 26.7524 29.4115 19.3771 5.04387 10.0754 20.0918 13.4489
+5.8373 5.82501 4.69965 1.53771 6.54862 6.18703 6.65574 11.9414 14.9412 104.391
+101.333 207.479 336.071 251.569 331.811 407.216 143.428 155.422 160.456 329.63
+204.574 740.147 1325.45 911.62 398.157 158.143 120.81 48.8267 31.7811 16.0533
+12.5108 15.8319 45.2642 49.4197 58.2082 42.081 46.5278 34.6259 36.7423 17.0381
+134.961 79.5661 71.5765 41.7057 89.7811 105.005 101.42 132.53 47.181 24.0716
+37.2307 21.0792 32.155 77.3623 26.2176 6.70934 12.7293 12.5178 7.62103 7.34655
+3.04009 3.77578 3.02227 4.55362 4.45918 6.35058 8.64894 21.2632 24.3743 87.7754
+59.0663 89.5302 78.4706 178.51 604.818 484.753 580.491 261.078 335.142 292.319
+310.162 278.345 1044.6 281.296 149.643 151.662 136.738 35.9167 20.5044 14.4723
+13.1928 9.95167 28.4697 124.436 247.195 97.4723 50.8905 42.6615 40.5261 25.9182
+148.145 75.36 89.6543 26.8006 71.8864 114.842 176.547 107.018 34.8678 16.5891
+14.4471 12.5064 48.7672 14.6538 30.8512 7.8305 12.1775 7.36201 4.46343 6.26901
+5.25972 3.67915 10.3437 11.5134 4.28181 7.20139 2.81055 6.55014 17.5583 19.9688
+61.2471 14.5167 40.1379 301.072 1562.14 1196.54 363.194 199.827 194.176 405.628
+298.945 736.024 405.914 185.533 111.587 131.645 77.1014 53.7973 18.5777 12.9576
+6.61679 18.3496 23.3575 27.8718 65.6302 57.1992 46.7138 13.3754 5.20161 10.3814
+186.927 84.0731 45.0741 11.7242 59.8537 82.6033 101.12 104.737 24.7717 7.94419
+16.9677 20.6013 27.7082 20.8393 37.6449 31.776 10.4782 16.5774 22.013 10.2945
+27.0622 13.0981 14.5024 10.3983 3.58376 10.8591 12.2233 14.6486 9.19856 13.4818
+66.0026 25.9823 136.904 875.947 2660.82 1283.26 400.882 466.67 399.061 180.522
+439.59 521.783 374.751 159.76 37.1957 85.9656 49.1792 38.8989 26.1765 24.9595
+5.83116 28.0691 27.3036 20.9041 29.9232 34.2015 19.7702 6.1003 12.0461 11.2985
+116.738 28.1134 57.4146 40.5643 79.3388 116.711 157.083 57.1732 14.524 10.3766
+9.22906 13.9452 22.797 29.3146 13.647 12.9773 11.6009 11.2544 7.68994 15.1663
+61.0763 36.2997 38.3239 15.8576 13.8692 14.9138 14.6006 26.2173 23.0019 43.6342
+30.4911 55.7396 90.3904 1044.76 3095.53 3221.08 1582.15 419.797 56.4722 132.56
+198.972 629.682 103.017 88.8928 25.8543 153.995 157.003 41.6463 11.8086 15.6281
+13.2363 11.0644 9.40354 39.7515 47.5643 49.4556 10.4057 12.5083 4.9052 8.79519
+230.156 94.7533 77.3578 34.491 73.0107 84.3087 34.0118 65.8741 12.3291 17.5722
+11.7005 23.6475 16.9362 14.3865 22.9279 14.8241 7.02213 13.9286 24.6411 26.9962
+31.7861 67.3671 19.9985 28.2531 9.20859 19.7001 11.5479 14.675 38.9477 40.3528
+54.8535 63.0194 450.918 3512.48 1738.82 400.265 343.493 310.934 156.03 158.099
+315.133 331.473 330.261 110.875 104.454 147.66 81.7812 91.545 38.1661 42.4143
+6.63923 12.8856 11.9823 48.1425 31.9221 19.6013 14.6306 1.84626 6.26632 3.34762
+47.4155 50.4427 81.2703 124.308 85.9079 27.4487 30.897 29.1462 17.0207 9.5643
+11.2067 27.0668 27.5925 19.3068 24.7847 23.5962 7.4973 11.081 8.38782 58.4262
+50.094 32.9277 33.0137 9.32571 7.4527 21.7957 56.8861 42.1461 115.322 85.237
+48.6209 143.832 114.649 294.719 1647.31 504.475 210.151 384.534 322.501 589.984
+397.692 418.766 1753.5 659.375 357.536 738.961 281.077 82.507 136.193 76.4737
+45.7249 33.4299 18.8194 17.5521 11.8923 7.47905 4.34838 3.94375 3.25485 1.91034
+63.5406 46.0423 85.2997 131.251 24.2001 24.1181 28.5711 16.0767 6.1607 8.54552
+5.06676 24.2608 18.4471 45.8946 41.2866 17.6425 13.4543 15.12 29.4587 77.7877
+92.4495 101.533 12.4231 40.5942 11.4035 32.9241 30.4445 38.9273 57.6072 302.446
+83.1299 241.616 219.72 238.054 300.847 422.524 286.823 1199.96 421.484 596.515
+254.359 349.791 1725.89 588.8 598.664 721.311 482.425 238.898 140.626 125.418
+52.455 21.1256 10.3769 5.58853 13.4824 7.84461 2.96352 4.2878 4.01529 6.10125
+17.523 57.1667 92.6087 119.855 53.8962 6.98471 12.8539 8.17506 2.62537 4.66473
+11.5381 16.5737 15.9564 39.1949 12.7064 20.3379 28.2765 23.9116 35.57 82.5992
+40.1316 57.5629 25.7224 20.5747 11.8236 13.0254 13.3414 36.4756 76.6234 531.985
+132.745 215.349 521.783 529.206 87.6431 251.767 445.352 239.932 364.005 383.513
+397.565 307.335 1099.46 393.164 833.884 1139.2 1483.81 770.901 357.344 230.146
+93.1352 21.7076 12.5533 11.3716 5.60296 9.81726 11.2922 9.78065 1.55667 3.04504
+64.942 17.1216 42.9336 30.8089 92.7698 44.2148 13.6206 5.95012 2.05807 2.50923
+4.0192 31.3432 22.1777 22.2923 32.0989 13.2944 14.9987 16.3734 26.4271 52.0306
+26.1269 19.4514 24.4363 45.6109 25.5835 42.9299 38.2265 60.3007 140.925 297.4
+266.327 120.31 779.539 801.412 410.839 201.066 183.508 375.736 381.385 478.965
+163.587 183.797 357.063 559.799 765.989 799.894 2239.57 2758.98 482.087 162.218
+171.198 87.0324 38.3781 15.3789 13.0404 23.4676 13.5287 9.58327 7.56764 2.39579
+58.6734 25.7932 56.7211 132.361 48.6129 45.1323 60.1066 43.8161 12.5016 22.4973
+15.9752 44.4668 29.0194 45.0352 43.3355 67.637 13.7419 9.24848 28.6359 7.32442
+14.8388 10.4146 11.7061 27.6984 84.9773 168.474 119.709 182.036 314.654 279.592
+288.656 177.201 691.07 398.873 312.344 415.029 149.058 704.637 351.246 461.66
+336.44 288.714 247.338 914.541 993.322 2698.58 1885.49 4350.01 813.676 440.254
+323.094 99.7385 18.9376 19.5556 23.7139 44.2356 25.4798 18.8305 4.13107 5.02941
+60.7497 157.459 76.335 104.298 122.762 70.3756 32.0248 24.599 50.7013 33.1244
+19.2807 38.5755 17.0223 40.7046 5.65697 15.6211 6.58651 4.59868 8.4437 8.0631
+6.88562 3.28204 21.7924 50.0245 260.841 526.859 366.871 335.611 217.364 199.618
+117.321 192.739 455.729 961.172 272.09 332.581 402.512 524.967 538.656 311.181
+533.867 834.679 396.458 600.22 1584.46 4453.45 7390.52 2400.19 987.162 343.233
+297.62 34.8298 74.4899 36.7625 15.9296 29.9259 83.5701 6.01778 11.4812 27.3864
+19.0226 20.3761 53.1204 137.945 108.145 68.6525 42.0512 31.3044 23.0771 24.255
+22.2642 20.9311 67.9241 73.239 53.8714 41.9482 12.0574 1.83108 6.00862 7.92371
+1.3362 3.12371 9.80245 19.7313 143.15 372.061 501.036 333.791 171.836 129.703
+133.885 135.379 449.324 1183.75 1652.2 693.424 615.234 499.388 445.131 140.913
+514.459 826.466 407.213 304.622 1103.13 3101.91 4122.76 1468.49 984.402 366.395
+340.609 100.019 33.0732 41.5703 46.3072 65.1916 35.7001 34.7666 23.1718 36.4678
+6.8137 7.49272 20.7957 56.9207 34.1 76.3356 53.3856 31.4498 33.7088 15.7
+18.369 23.8568 64.6649 44.6325 18.3383 20.0351 12.4614 13.9178 16.353 17.5401
+9.16951 10.5219 20.7633 38.1621 112.61 366.393 559.052 407.082 144.845 132.435
+234.662 135.777 154.824 2011.11 1321.37 1244.53 618.307 430.419 325.457 184.887
+232.776 663.049 849.269 886.41 2422.25 2424.52 3131.51 2220.84 2083.93 637.89
+482.518 776.392 105.819 62.7651 85.8146 33.1698 18.3317 23.677 23.5924 43.2612
+6.54525 40.0621 29.0539 57.2709 31.8827 23.5939 18.5076 12.4999 19.395 12.0417
+28.5613 29.073 25.5129 11.7861 10.7726 49.1129 109.708 47.75 18.6599 14.2543
+16.238 13.7341 41.9462 54.5257 135.109 191.43 402.165 157.998 398.029 294.041
+188.351 531.853 341.18 736.8 1123.44 1071.81 557.393 319.797 258.529 307.859
+400.174 999.117 452.486 981.499 1511.6 3966.42 1396.04 1036.93 988.687 365.344
+253.577 749.191 180.14 69.426 59.8888 59.6393 19.7172 16.481 15.1066 29.5791
+5.1572 11.1076 14.9242 55.9548 16.5485 6.86473 8.39603 11.8425 12.7216 18.3218
+17.8062 37.441 18.0001 2.73054 15.5209 36.0339 78.6859 41.682 46.8437 53.9565
+39.887 104.267 63.3217 65.3043 157.417 99.8131 195.06 138.609 390.166 679.61
+527.949 646.846 1769.9 673.976 1367.5 551.832 245.715 668.301 342.247 271.407
+874.071 1334.39 849.49 1414.87 738.026 1203.53 768.187 243.877 566.068 292.408
+404.453 128.107 86.0268 186.784 97.4967 103.94 12.2344 31.5909 30.5202 41.3129
+12.5248 8.30477 52.5087 47.853 5.56032 6.19903 2.64132 2.2065 5.87085 11.6981
+21.8809 19.573 12.8304 11.5763 25.4171 41.2547 50.5742 52.5979 26.6371 46.0102
+92.3795 41.4795 75.9157 163.504 236.302 263.051 455.272 363.471 222.58 302.826
+435.962 317.966 355.301 152.257 566.434 370.4 716.597 481.83 237.285 416.388
+547.323 1134.65 1172.3 3265.02 1519.52 878.538 340.847 223.255 225.173 229.544
+198.559 226.028 163.319 198.14 125.101 44.1147 44.5977 73.4195 16.0422 19.3293
+25.7064 12.5655 16.7692 46.1288 13.062 8.32068 1.81363 3.38145 6.96019 5.26844
+13.53 9.65994 13.4378 28.5921 34.4531 46.4427 78.3776 37.5988 63.059 49.1531
+101.239 411.887 496.222 409.533 560.365 274.766 344.521 291.867 165.594 631.208
+202.944 92.8656 229.032 335.246 172.666 205.436 162.487 502.175 221.123 412.134
+685.55 1205.75 1839.58 3099.22 1534.88 388.395 408.901 162.274 160.489 215.063
+214.526 160.391 53.4702 80.5949 50.0597 31.2767 52.0651 69.5388 16.0093 10.5106
+81.1095 48.8423 59.7896 25.5577 8.73746 8.86782 4.95859 5.59971 9.30181 4.03129
+22.928 11.9531 70.5172 79.695 85.0521 45.3572 99.1302 59.6629 45.0417 23.417
+87.2399 332.872 644.029 166.23 110.989 182.281 239.355 403.675 293.542 359.507
+218.587 203.982 160.069 344.561 472.623 404.219 146.941 434.741 354.294 246.767
+2312.88 3387.59 2412.48 1049.18 2670.87 406.116 637.39 77.8054 239.936 122.202
+68.5951 109.872 405.209 42.8197 20.8 21.294 22.8641 26.4032 11.5871 11.9402
+90.9514 47.1228 76.8672 27.0838 7.4393 5.58469 4.81539 5.30697 8.28522 10.3655
+33.2928 23.4499 73.952 71.4277 57.1311 139.377 19.6212 41.7756 24.9511 33.9181
+30.2865 184.136 209.812 469.27 251.281 266.422 282.916 248.001 504.344 456.421
+418.901 554.784 150.841 167.878 302.603 294.199 210.82 260.03 367.148 657.269
+1723.75 1161.19 2166.84 791.063 753.253 913.99 585.76 201.392 78.1263 40.695
+84.6779 68.6113 143.673 153.987 51.4197 24.6421 33.9362 41.5747 21.6275 8.50753
+75.2005 110.481 66.5923 22.3083 5.72575 6.41388 4.33347 2.62914 5.48634 11.8036
+7.57154 7.89273 77.7472 104.302 87.0509 50.9045 44.5834 78.34 62.0009 54.9923
+31.7324 138.778 306.116 565.734 1191.66 1100.43 916.167 1153.73 903.927 2446.69
+1010.98 164.921 204.573 152.31 246.597 256.195 263.652 324.899 177.408 228.754
+270.392 495.606 484.108 326.313 1024.11 654.936 502.902 157.628 117.944 159.09
+56.9182 59.8396 187.913 66.8949 39.2077 25.3915 97.1907 130.837 31.2642 21.4247
+56.1196 37.7552 82.496 44.7477 7.36427 14.0479 4.26265 2.02766 3.23654 7.09393
+3.88492 7.81185 16.8419 192.62 73.8153 69.4848 41.4784 28.4979 33.492 74.2865
+126.487 194.211 955.297 481.562 430.674 765.668 1805.74 2939.24 2586.47 2739.25
+1357.91 724.172 433.667 196.796 531.818 686.029 467.195 233.311 215.057 215.546
+588.592 495.56 115.232 353.641 544.823 780.292 762.664 488.789 89.672 52.2038
+35.2764 79.4704 161.427 13.5503 26.9162 35.672 57.0153 153.132 57.5178 63.4068
+56.6975 31.1216 111.031 104.928 10.8435 12.5198 8.96399 4.91823 4.4577 5.85379
+4.56125 10.4228 62.2773 98.1814 307.117 153.472 51.3412 130.408 71.3851 25.2048
+69.3342 384.48 724.462 1378.04 1410.75 802.628 1027.53 1781.35 1594.52 2432.72
+1520.59 853.823 460.935 239.175 195.508 227.966 264.326 344.203 431.165 146.574
+488.44 389.25 242.28 674.341 1100.07 678.439 583.221 81.6405 51.5631 33.0673
+64.8008 156.736 151.033 90.5311 54.0294 87.1092 59.1727 116.883 115.087 51.2184
+49.4846 37.337 19.8188 32.4347 23.8926 15.0755 12.2722 15.1368 4.80346 16.1839
+11.6858 34.8814 53.0921 134.021 98.325 63.2884 63.2773 145.12 89.6893 77.3558
+246.961 471.098 734.52 1932.68 4268.89 3599.1 2674.85 2881.82 1640.86 367.349
+211.46 400.612 258.453 254.129 142.878 164.616 288.449 998.997 410.616 308.156
+176.417 217.325 362.578 700.531 753.963 261.702 144.887 136.593 43.5651 107.553
+42.7297 27.8142 101.947 53.9861 23.8278 36.7699 103.985 134.622 73.8529 54.9114
+58.3015 30.2224 37.1376 20.7762 64.4863 22.8283 65.6168 13.1391 17.5461 10.9986
+19.8343 11.9556 21.8938 44.6508 74.7213 102.044 334.667 253.9 52.8324 157.898
+452.816 633.117 659.816 508.693 4424.38 8154.98 3557.02 3463.2 638.299 652.219
+420.97 162.109 185.46 214.331 103.657 248.26 605.251 310.561 321.782 927.703
+300.408 102.332 186.67 432.541 259.606 101.539 97.1914 84.5492 31.7583 114.909
+38.832 44.0581 64.7095 156.388 80.8029 125.106 123.183 129.256 174.244 75.0937
+38.2817 81.9451 73.4414 68.445 84.1828 65.0094 24.202 20.0125 18.3672 13.5596
+24.3744 25.2517 6.84128 44.6615 61.4967 150.292 588.301 176.139 66.4806 84.6886
+136.751 346.499 315.686 653.719 1559.55 9820.77 2138.09 1709.77 334.628 720.126
+291.168 208.804 490.515 169.565 282.649 129.91 296.085 397.57 353.414 239.545
+361.122 108.696 179.891 249.303 307.719 104.273 94.1912 55.1779 109.149 74.0114
+33.3936 27.0343 82.3409 162.161 176.961 191.768 202.04 182.742 154.598 124.658
+45.7327 65.3636 45.2332 94.2438 127.783 41.8903 11.2444 15.0039 22.1176 22.494
+18.0346 21.4278 36.7506 169.959 86.5053 224.162 285.632 196.33 154.209 226.596
+142.774 228.344 271.776 138.739 690.658 1276.23 327.866 388.908 555.341 922.142
+581.199 173.7 251.401 346.573 272.085 94.7112 111.334 94.6412 189.333 92.9357
+96.529 378.812 97.118 266.693 377.508 69.0122 70.3353 89.7882 52.2369 82.1893
+61.5123 162.299 72.6188 100.123 182.753 368.844 563.386 344.195 212.385 224.894
+12.0794 6.96811 13.6401 23.1133 39.0274 26.548 20.1708 23.6963 37.2142 11.1464
+34.7698 42.2158 71.2611 83.1402 65.1761 164.148 676.463 225.92 207.11 74.5883
+291.383 318.749 298.921 727.971 250.722 1082.85 404.553 383.854 331.447 422.655
+670.287 335.833 456.772 188.381 307.297 168.16 71.5286 57.4187 42.1109 71.7763
+191.279 100.528 79.4445 167.813 241.142 71.2482 77.6203 84.2346 36.8571 236.674
+113.989 91.7994 99.5197 260.539 310.671 127.456 483.953 3358.36 712.36 257.286
+1.21487 4.69482 15.1457 37.8848 27.2107 5.40776 8.14223 20.4986 11.6821 12.6685
+20.6275 35.4008 38.4599 38.2851 107.82 132.363 449.093 212.045 214.968 489.361
+868.524 847.996 583.716 232.568 98.425 180.486 109.929 349.526 147.891 587.508
+924.636 324.955 377.513 293.01 338.296 134.008 80.4823 45.9141 73.2414 84.0503
+45.1274 66.5413 110.658 94.8165 118.934 50.0192 48.7413 109.772 357.48 137.172
+91.2602 97.6734 240.98 313.407 227.214 260.168 472.54 1405.07 582.212 211.89
+1.27431 7.26894 13.3642 32.6275 23.5945 12.1167 7.12369 10.8687 19.1133 35.3148
+32.2386 44.1305 14.6919 23.4161 95.5473 255.067 138.837 97.3005 154.551 408.74
+452.019 905.623 320.89 269.61 99.9324 76.1756 48.0118 112.183 139.03 133.592
+204.678 121.194 432.395 336.196 152.576 112.526 44.3264 73.0053 38.6753 59.5764
+81.7723 87.2967 71.484 29.4096 91.9449 74.7391 76.028 278.28 226.333 246.343
+250.577 127.934 148.681 384.246 179.419 862.611 587.345 509.829 534.588 516.322
+1.30457 7.16797 16.2951 17.0613 20.6087 7.54569 3.75101 8.74196 40.3185 53.4048
+67.193 75.5073 204.134 43.7842 25.3278 45.3329 50.2827 29.3106 76.5537 132.058
+331.937 272.581 132.541 164.907 80.7762 66.9542 93.2007 101.341 112.208 207.794
+128.803 86.4269 110.66 143.297 99.4194 68.8305 141.854 63.9732 71.0969 72.3832
+56.0282 77.9382 22.4061 85.5682 163.145 44.4014 64.3127 216.852 276.036 278.167
+218.998 156.151 79.5321 177.434 168.862 436.236 805.117 498.357 627.783 415.043
+1.80451 16.6646 34.427 20.0175 23.4669 14.6306 19.1555 25.5808 45.9441 28.5929
+485.705 244.06 188.875 41.6427 19.5886 43.2466 22.5685 14.3146 25.009 71.0609
+58.3753 94.9985 191.21 109.099 77.6727 106.924 144.004 67.0301 228.584 127.667
+145.021 47.5722 133.974 140.639 104.091 235.841 126.622 83.0442 84.5069 46.8018
+31.5718 53.6039 30.9789 174.223 176.114 185.558 98.2725 54.9268 168.42 189.881
+350.732 145.129 110.636 144.885 266.278 582.83 920.797 1024.45 715.139 735.738
+8.57008 13.9964 27.3593 48.8463 71.621 50.3912 82.0414 18.6808 51.9339 54.0203
+147.56 104.369 148.165 28.6143 41.125 32.193 16.439 20.2916 38.9869 59.6645
+138.122 26.4872 138.037 85.8941 91.9876 102.267 56.0531 57.9608 143.493 159.199
+254.711 83.6459 249.328 76.4369 84.5265 171.313 127.197 56.2383 73.5365 61.913
+60.566 24.3878 35.7227 107.385 91.2094 508.448 457.957 186.108 178.223 237.736
+342.305 439.044 96.6458 109.017 364.785 442.134 845.661 1099.57 822.806 1318.62
+29.1955 5.23936 14.9566 21.0118 21.3233 145.258 40.4961 30.2956 82.8073 90.2183
+97.13 54.3622 88.3743 36.9415 32.2842 27.8818 9.74873 39.9342 24.766 19.5656
+36.9211 32.6813 20.6755 63.8837 145.445 92.838 182.288 247.714 394.211 430.36
+231.061 227.509 149.821 113.204 323.383 194.661 104.473 119.576 95.381 73.8099
+207.084 170.307 64.4734 63.945 190.095 355.379 1063.81 186.614 258.345 546.013
+526.815 266.886 386.088 483.392 453.477 947.162 1324.59 1984.06 1198.84 1260.64
+21.5104 17.1738 15.1662 22.9201 49.0347 81.8685 55.7069 72.5772 88.9606 29.8389
+52.5633 47.3363 151.75 70.0225 42.4876 15.2291 5.09948 16.766 11.5449 13.1188
+9.90897 25.4474 46.3009 21.4849 166.274 77.4423 127.968 368.378 230.703 741.489
+713.442 347.241 215.562 324.489 336.557 94.0549 202.596 230.738 59.3821 31.5605
+86.1488 55.0417 366.793 316.216 717.997 380.35 642.829 268.834 372.51 1154.08
+1248.78 562.236 2041.73 2075.22 2779.14 2403.34 1811.44 1588.37 1117.36 1323.66
+20.6656 7.88924 30.5988 39.0192 84.3032 65.6006 84.5574 169.246 263.849 251.289
+241.337 70.9478 64.3961 32.3694 19.178 11.6462 8.5523 12.1455 17.3189 6.13408
+12.2861 13.6326 35.224 20.3946 271.052 406.707 239.402 361.838 499.006 529.226
+724.785 925.188 574.955 292.668 219.901 131.016 552.119 99.5586 117.547 87.3079
+206.127 141.381 307.718 308.628 510.574 1235.48 851.83 631.693 678.323 898.377
+2623.31 1132.03 1600.27 5988.62 9752.96 2789.57 2072.75 2120.29 1023.48 672.869
+/
+PERMY
+7.62835 4.03885 6.60116 3.7738 3.62271 7.16426 7.46622 9.49406 8.1349 5.99188
+3.91344 8.10727 2.97128 8.49466 11.7895 7.764 6.50457 9.85067 53.8854 35.7084
+27.9736 7.66287 1.25903 1.55166 0.930796 0.51217 1.24489 0.857816 3.08811 3.07213
+1.5914 0.742461 0.800607 3.02238 1.43723 0.879817 2.23832 5.84761 6.56044 5.43538
+17.6731 13.5297 41.1362 33.0614 158.458 82.6664 164.996 130.187 47.612 14.6368
+7.44249 4.84485 3.65651 2.77773 2.18182 1.33768 2.78478 7.03112 6.51472 20.7407
+10.7052 1.98132 2.89136 2.85825 6.54055 5.98921 16.9096 17.6733 6.80342 7.56764
+4.18937 13.5948 7.95662 18.4594 9.81836 26.3655 55.0767 41.0184 47.3872 41.2232
+19.925 3.288 1.33063 1.04085 0.441781 1.41446 1.06714 1.27202 3.88435 2.86352
+1.07586 1.70383 1.53114 2.91754 1.3743 1.57718 5.76377 13.288 2.93138 1.54702
+13.6285 56.1573 55.8542 47.2602 47.3255 51.3887 49.5131 139.215 37.3332 7.58039
+0.878371 3.2175 1.37109 1.17399 3.99426 2.48068 8.7924 8.76781 26.4615 19.6632
+17.7106 5.21732 6.19582 10.5918 12.982 5.15694 34.0681 19.4456 15.9205 16.1767
+17.7631 18.9632 26.1688 12.3118 21.0407 21.805 47.2189 47.7633 62.7921 19.937
+5.96551 4.14878 2.14718 2.17136 2.0632 0.581669 1.63302 4.53838 6.34386 2.82886
+3.85838 3.9528 7.72059 2.82408 5.59676 6.04127 18.1715 7.00465 5.33083 2.88615
+20.8794 22.282 38.7581 132.927 98.261 85.1158 79.9747 41.9596 11.3935 4.66163
+5.04229 2.44032 0.894884 2.3036 2.97532 3.35976 4.52944 12.2364 17.1831 22.7871
+9.58388 11.0824 15.3216 29.4705 5.82498 6.62098 22.3158 47.7343 51.5742 14.1274
+43.3329 21.2919 17.1293 39.6214 42.6539 22.2342 50.9284 48.8042 24.2238 7.84365
+7.91384 7.20806 4.22001 2.18575 2.74395 1.2935 3.41521 2.97109 2.62745 1.85031
+4.37508 2.21569 7.08233 3.21111 4.1221 3.9141 5.91004 5.16409 13.6926 4.88277
+12.9693 55.9875 147.922 128.725 181.837 73.3471 102.138 48.7785 24.6031 25.3573
+5.93578 2.04273 1.54671 5.51415 8.07565 4.09397 7.72781 9.17309 45.7992 66.9998
+35.117 11.5585 10.6273 18.3173 5.93028 4.46334 46.3816 68.4905 36.3205 43.2853
+27.989 4.99397 15.167 38.4752 27.9342 26.6518 31.4401 14.7005 9.5276 11.2106
+12.5568 5.45445 2.19931 1.65944 2.17792 1.84364 2.57007 3.26733 5.8106 2.10224
+1.52309 4.47007 3.65979 4.79062 11.0209 3.33614 4.78544 6.41861 3.39625 7.69099
+57.4435 61.8919 97.253 186.253 132.099 98.9139 218.949 66.7055 34.6857 12.8601
+3.7641 5.31032 3.92004 5.13374 4.95139 6.50453 6.7495 14.4293 39.4397 41.1245
+20.1856 4.5578 7.15487 8.29941 59.8848 9.67495 9.95057 19.9662 8.64997 9.66465
+10.0591 9.65032 38.68 16.3553 40.82 30.793 24.8883 13.1601 6.48218 13.2503
+21.1232 11.8212 4.32496 3.78951 5.41236 2.43943 2.61484 1.98122 3.00627 2.24703
+2.0488 5.55844 5.09769 7.09221 11.2569 6.04015 12.5018 19.0564 8.73149 22.3956
+20.2501 76.712 92.3479 200.801 95.8014 216.139 154.411 134.089 48.4537 7.76506
+9.38466 8.5251 18.1113 13.4201 12.7564 10.7767 6.96351 19.668 25.644 47.9086
+36.7366 16.2034 7.99347 6.14896 30.1729 16.0259 10.3094 9.797 3.54067 4.70457
+12.1397 12.7788 33.601 28.5505 27.0398 12.6101 7.76588 9.13266 32.7103 20.6781
+36.2045 14.5871 6.16043 4.15687 8.57666 2.32032 2.52943 3.72705 3.83927 3.55414
+2.35995 4.50693 2.57774 9.7328 7.0609 5.85894 15.3599 13.9357 7.20296 14.7977
+27.8341 64.5637 37.2131 97.5577 90.2531 315.395 466.917 310.714 38.0354 13.6568
+7.15633 13.8062 18.851 36.89 26.143 32.0667 18.787 15.0812 43.5712 42.4669
+35.2843 23.1947 21.8008 25.0348 29.8865 11.556 26.3402 5.64492 4.04891 2.53338
+7.81086 29.4304 17.3356 117.201 40.7035 55.7175 27.55 15.7276 82.7414 14.7918
+7.52954 3.72065 7.00457 4.79215 5.98537 14.1591 3.41908 4.35597 4.01701 9.06687
+7.24602 20.7625 5.46266 7.01385 14.1368 5.55641 6.9742 13.3336 8.06251 15.6466
+24.551 45.4061 75.9871 80.2355 37.6621 154.612 219.777 135.033 99.4995 29.9368
+9.86667 5.14481 14.1317 41.1717 42.7507 69.938 70.3933 35.3459 67.4666 79.0923
+91.4847 40.6305 15.0065 44.5453 61.5374 41.7214 24.0839 5.98118 12.5148 8.70925
+22.0323 27.0736 44.726 79.7024 80.3792 68.4281 108.625 55.3159 32.2337 35.0923
+19.1645 17.0876 5.93077 4.04921 3.89318 4.74693 2.44717 11.1874 11.2212 8.30951
+5.66603 7.27567 8.70484 6.20137 5.47108 15.0068 19.2071 12.8842 3.55109 12.7625
+39.4981 84.7635 28.8318 38.0359 31.5786 68.969 109.677 25.882 36.0534 17.5694
+11.2541 4.82554 22.1748 31.5197 58.0877 52.2838 30.4774 27.0311 102.734 57.778
+64.6858 53.3158 16.836 40.6083 27.1215 59.9799 37.8658 29.6063 9.82437 6.36677
+16.707 17.77 9.08237 29.4895 34.0527 42.7992 174.732 54.9554 35.2315 35.3904
+9.79062 6.8988 3.54242 4.4516 3.1142 2.40508 2.61942 4.48909 3.8002 18.7693
+18.4975 11.8583 5.2845 11.7735 7.65626 54.5241 45.7104 17.8551 8.52231 23.0062
+16.2128 46.6508 42.2073 48.1347 79.1977 130.936 122.531 74.32 30.7687 21.2208
+12.5787 25.0309 23.7188 58.8289 37.8014 26.7907 34.3079 17.1487 104.337 62.5252
+15.8061 86.0056 29.092 54.4416 85.5988 37.4374 27.4813 24.8733 30.8742 7.31761
+7.72658 3.00643 3.06273 36.4814 27.2449 41.5327 56.4089 31.738 18.1265 17.3559
+12.8923 11.6237 6.34235 2.20057 1.70642 1.36543 1.61989 3.23262 12.1015 21.6203
+32.9737 14.0187 8.0373 14.6656 22.941 34.6594 17.4639 36.948 6.49647 15.9971
+15.9983 28.3332 49.7788 42.192 123.888 282.595 401.113 106.337 61.9978 25.2464
+15.5853 14.1999 19.2486 22.3512 13.2513 27.3713 27.3343 51.3722 53.4593 48.4271
+4.6417 7.18294 18.1018 41.3806 26.4439 41.5644 62.3529 57.0328 75.8561 26.7039
+36.9382 10.3085 18.2051 12.9271 50.8415 7.64391 9.56954 7.52674 13.4501 11.353
+7.74768 3.94851 5.56901 3.10886 1.3877 3.71029 3.9522 1.94623 5.31905 45.5971
+27.7281 34.9846 70.0204 27.2869 33.6694 21.3838 19.0672 9.73388 16.4058 9.9229
+60.9817 72.1549 166.116 254.31 363.007 270.612 48.2968 112.602 28.9847 23.3959
+14.03 23.387 19.2429 16.8056 13.109 37.0299 27.3088 34.0497 59.5686 14.434
+6.73712 18.0502 32.8469 61.2883 22.2111 66.0106 61.0477 138.033 202.898 115.473
+19.6627 20.9958 31.9412 23.2019 16.3984 19.6254 16.6568 12.8253 10.4205 11.0123
+11.3672 9.0024 10.1004 3.92611 9.41976 7.61944 5.63683 8.20955 9.19557 20.1509
+15.7337 41.9842 102.144 87.3574 37.869 76.8772 37.4562 47.7371 41.5986 21.1583
+112.778 156.147 327.888 919.338 1781.26 162.73 103.358 48.3543 41.2832 20.8211
+16.9892 24.2653 65.2473 30.8788 40.9808 6.33752 37.0348 33.6987 48.3644 51.4478
+23.989 53.1914 31.8355 32.4404 35.1574 49.2055 225.128 181.809 475.665 94.8362
+21.0259 20.2326 17.6654 55.2818 101.236 26.9223 12.2561 20.3814 14.6504 18.0476
+14.5448 11.1547 7.19099 4.21683 9.66141 5.36894 9.90163 9.71096 17.0372 74.1882
+107.196 75.5865 142.082 65.2354 88.5305 71.0443 152.021 72.9442 69.0625 63.7102
+140.839 487.549 2031.27 512.263 1386.97 157.978 102.688 32.6682 30.9009 52.2245
+21.7307 21.2284 79.3485 96.8616 61.4248 9.19567 31.3197 40.7983 38.8721 31.0897
+33.4725 54.6652 105.306 50.9404 62.2254 131.987 229.275 138.758 248.005 105.855
+29.6013 14.8923 19.7204 26.7524 29.4115 19.3771 5.04387 10.0754 20.0918 13.4489
+5.8373 5.82501 4.69965 1.53771 6.54862 6.18703 6.65574 11.9414 14.9412 104.391
+101.333 207.479 336.071 251.569 331.811 407.216 143.428 155.422 160.456 329.63
+204.574 740.147 1325.45 911.62 398.157 158.143 120.81 48.8267 31.7811 16.0533
+12.5108 15.8319 45.2642 49.4197 58.2082 42.081 46.5278 34.6259 36.7423 17.0381
+134.961 79.5661 71.5765 41.7057 89.7811 105.005 101.42 132.53 47.181 24.0716
+37.2307 21.0792 32.155 77.3623 26.2176 6.70934 12.7293 12.5178 7.62103 7.34655
+3.04009 3.77578 3.02227 4.55362 4.45918 6.35058 8.64894 21.2632 24.3743 87.7754
+59.0663 89.5302 78.4706 178.51 604.818 484.753 580.491 261.078 335.142 292.319
+310.162 278.345 1044.6 281.296 149.643 151.662 136.738 35.9167 20.5044 14.4723
+13.1928 9.95167 28.4697 124.436 247.195 97.4723 50.8905 42.6615 40.5261 25.9182
+148.145 75.36 89.6543 26.8006 71.8864 114.842 176.547 107.018 34.8678 16.5891
+14.4471 12.5064 48.7672 14.6538 30.8512 7.8305 12.1775 7.36201 4.46343 6.26901
+5.25972 3.67915 10.3437 11.5134 4.28181 7.20139 2.81055 6.55014 17.5583 19.9688
+61.2471 14.5167 40.1379 301.072 1562.14 1196.54 363.194 199.827 194.176 405.628
+298.945 736.024 405.914 185.533 111.587 131.645 77.1014 53.7973 18.5777 12.9576
+6.61679 18.3496 23.3575 27.8718 65.6302 57.1992 46.7138 13.3754 5.20161 10.3814
+186.927 84.0731 45.0741 11.7242 59.8537 82.6033 101.12 104.737 24.7717 7.94419
+16.9677 20.6013 27.7082 20.8393 37.6449 31.776 10.4782 16.5774 22.013 10.2945
+27.0622 13.0981 14.5024 10.3983 3.58376 10.8591 12.2233 14.6486 9.19856 13.4818
+66.0026 25.9823 136.904 875.947 2660.82 1283.26 400.882 466.67 399.061 180.522
+439.59 521.783 374.751 159.76 37.1957 85.9656 49.1792 38.8989 26.1765 24.9595
+5.83116 28.0691 27.3036 20.9041 29.9232 34.2015 19.7702 6.1003 12.0461 11.2985
+116.738 28.1134 57.4146 40.5643 79.3388 116.711 157.083 57.1732 14.524 10.3766
+9.22906 13.9452 22.797 29.3146 13.647 12.9773 11.6009 11.2544 7.68994 15.1663
+61.0763 36.2997 38.3239 15.8576 13.8692 14.9138 14.6006 26.2173 23.0019 43.6342
+30.4911 55.7396 90.3904 1044.76 3095.53 3221.08 1582.15 419.797 56.4722 132.56
+198.972 629.682 103.017 88.8928 25.8543 153.995 157.003 41.6463 11.8086 15.6281
+13.2363 11.0644 9.40354 39.7515 47.5643 49.4556 10.4057 12.5083 4.9052 8.79519
+230.156 94.7533 77.3578 34.491 73.0107 84.3087 34.0118 65.8741 12.3291 17.5722
+11.7005 23.6475 16.9362 14.3865 22.9279 14.8241 7.02213 13.9286 24.6411 26.9962
+31.7861 67.3671 19.9985 28.2531 9.20859 19.7001 11.5479 14.675 38.9477 40.3528
+54.8535 63.0194 450.918 3512.48 1738.82 400.265 343.493 310.934 156.03 158.099
+315.133 331.473 330.261 110.875 104.454 147.66 81.7812 91.545 38.1661 42.4143
+6.63923 12.8856 11.9823 48.1425 31.9221 19.6013 14.6306 1.84626 6.26632 3.34762
+47.4155 50.4427 81.2703 124.308 85.9079 27.4487 30.897 29.1462 17.0207 9.5643
+11.2067 27.0668 27.5925 19.3068 24.7847 23.5962 7.4973 11.081 8.38782 58.4262
+50.094 32.9277 33.0137 9.32571 7.4527 21.7957 56.8861 42.1461 115.322 85.237
+48.6209 143.832 114.649 294.719 1647.31 504.475 210.151 384.534 322.501 589.984
+397.692 418.766 1753.5 659.375 357.536 738.961 281.077 82.507 136.193 76.4737
+45.7249 33.4299 18.8194 17.5521 11.8923 7.47905 4.34838 3.94375 3.25485 1.91034
+63.5406 46.0423 85.2997 131.251 24.2001 24.1181 28.5711 16.0767 6.1607 8.54552
+5.06676 24.2608 18.4471 45.8946 41.2866 17.6425 13.4543 15.12 29.4587 77.7877
+92.4495 101.533 12.4231 40.5942 11.4035 32.9241 30.4445 38.9273 57.6072 302.446
+83.1299 241.616 219.72 238.054 300.847 422.524 286.823 1199.96 421.484 596.515
+254.359 349.791 1725.89 588.8 598.664 721.311 482.425 238.898 140.626 125.418
+52.455 21.1256 10.3769 5.58853 13.4824 7.84461 2.96352 4.2878 4.01529 6.10125
+17.523 57.1667 92.6087 119.855 53.8962 6.98471 12.8539 8.17506 2.62537 4.66473
+11.5381 16.5737 15.9564 39.1949 12.7064 20.3379 28.2765 23.9116 35.57 82.5992
+40.1316 57.5629 25.7224 20.5747 11.8236 13.0254 13.3414 36.4756 76.6234 531.985
+132.745 215.349 521.783 529.206 87.6431 251.767 445.352 239.932 364.005 383.513
+397.565 307.335 1099.46 393.164 833.884 1139.2 1483.81 770.901 357.344 230.146
+93.1352 21.7076 12.5533 11.3716 5.60296 9.81726 11.2922 9.78065 1.55667 3.04504
+64.942 17.1216 42.9336 30.8089 92.7698 44.2148 13.6206 5.95012 2.05807 2.50923
+4.0192 31.3432 22.1777 22.2923 32.0989 13.2944 14.9987 16.3734 26.4271 52.0306
+26.1269 19.4514 24.4363 45.6109 25.5835 42.9299 38.2265 60.3007 140.925 297.4
+266.327 120.31 779.539 801.412 410.839 201.066 183.508 375.736 381.385 478.965
+163.587 183.797 357.063 559.799 765.989 799.894 2239.57 2758.98 482.087 162.218
+171.198 87.0324 38.3781 15.3789 13.0404 23.4676 13.5287 9.58327 7.56764 2.39579
+58.6734 25.7932 56.7211 132.361 48.6129 45.1323 60.1066 43.8161 12.5016 22.4973
+15.9752 44.4668 29.0194 45.0352 43.3355 67.637 13.7419 9.24848 28.6359 7.32442
+14.8388 10.4146 11.7061 27.6984 84.9773 168.474 119.709 182.036 314.654 279.592
+288.656 177.201 691.07 398.873 312.344 415.029 149.058 704.637 351.246 461.66
+336.44 288.714 247.338 914.541 993.322 2698.58 1885.49 4350.01 813.676 440.254
+323.094 99.7385 18.9376 19.5556 23.7139 44.2356 25.4798 18.8305 4.13107 5.02941
+60.7497 157.459 76.335 104.298 122.762 70.3756 32.0248 24.599 50.7013 33.1244
+19.2807 38.5755 17.0223 40.7046 5.65697 15.6211 6.58651 4.59868 8.4437 8.0631
+6.88562 3.28204 21.7924 50.0245 260.841 526.859 366.871 335.611 217.364 199.618
+117.321 192.739 455.729 961.172 272.09 332.581 402.512 524.967 538.656 311.181
+533.867 834.679 396.458 600.22 1584.46 4453.45 7390.52 2400.19 987.162 343.233
+297.62 34.8298 74.4899 36.7625 15.9296 29.9259 83.5701 6.01778 11.4812 27.3864
+19.0226 20.3761 53.1204 137.945 108.145 68.6525 42.0512 31.3044 23.0771 24.255
+22.2642 20.9311 67.9241 73.239 53.8714 41.9482 12.0574 1.83108 6.00862 7.92371
+1.3362 3.12371 9.80245 19.7313 143.15 372.061 501.036 333.791 171.836 129.703
+133.885 135.379 449.324 1183.75 1652.2 693.424 615.234 499.388 445.131 140.913
+514.459 826.466 407.213 304.622 1103.13 3101.91 4122.76 1468.49 984.402 366.395
+340.609 100.019 33.0732 41.5703 46.3072 65.1916 35.7001 34.7666 23.1718 36.4678
+6.8137 7.49272 20.7957 56.9207 34.1 76.3356 53.3856 31.4498 33.7088 15.7
+18.369 23.8568 64.6649 44.6325 18.3383 20.0351 12.4614 13.9178 16.353 17.5401
+9.16951 10.5219 20.7633 38.1621 112.61 366.393 559.052 407.082 144.845 132.435
+234.662 135.777 154.824 2011.11 1321.37 1244.53 618.307 430.419 325.457 184.887
+232.776 663.049 849.269 886.41 2422.25 2424.52 3131.51 2220.84 2083.93 637.89
+482.518 776.392 105.819 62.7651 85.8146 33.1698 18.3317 23.677 23.5924 43.2612
+6.54525 40.0621 29.0539 57.2709 31.8827 23.5939 18.5076 12.4999 19.395 12.0417
+28.5613 29.073 25.5129 11.7861 10.7726 49.1129 109.708 47.75 18.6599 14.2543
+16.238 13.7341 41.9462 54.5257 135.109 191.43 402.165 157.998 398.029 294.041
+188.351 531.853 341.18 736.8 1123.44 1071.81 557.393 319.797 258.529 307.859
+400.174 999.117 452.486 981.499 1511.6 3966.42 1396.04 1036.93 988.687 365.344
+253.577 749.191 180.14 69.426 59.8888 59.6393 19.7172 16.481 15.1066 29.5791
+5.1572 11.1076 14.9242 55.9548 16.5485 6.86473 8.39603 11.8425 12.7216 18.3218
+17.8062 37.441 18.0001 2.73054 15.5209 36.0339 78.6859 41.682 46.8437 53.9565
+39.887 104.267 63.3217 65.3043 157.417 99.8131 195.06 138.609 390.166 679.61
+527.949 646.846 1769.9 673.976 1367.5 551.832 245.715 668.301 342.247 271.407
+874.071 1334.39 849.49 1414.87 738.026 1203.53 768.187 243.877 566.068 292.408
+404.453 128.107 86.0268 186.784 97.4967 103.94 12.2344 31.5909 30.5202 41.3129
+12.5248 8.30477 52.5087 47.853 5.56032 6.19903 2.64132 2.2065 5.87085 11.6981
+21.8809 19.573 12.8304 11.5763 25.4171 41.2547 50.5742 52.5979 26.6371 46.0102
+92.3795 41.4795 75.9157 163.504 236.302 263.051 455.272 363.471 222.58 302.826
+435.962 317.966 355.301 152.257 566.434 370.4 716.597 481.83 237.285 416.388
+547.323 1134.65 1172.3 3265.02 1519.52 878.538 340.847 223.255 225.173 229.544
+198.559 226.028 163.319 198.14 125.101 44.1147 44.5977 73.4195 16.0422 19.3293
+25.7064 12.5655 16.7692 46.1288 13.062 8.32068 1.81363 3.38145 6.96019 5.26844
+13.53 9.65994 13.4378 28.5921 34.4531 46.4427 78.3776 37.5988 63.059 49.1531
+101.239 411.887 496.222 409.533 560.365 274.766 344.521 291.867 165.594 631.208
+202.944 92.8656 229.032 335.246 172.666 205.436 162.487 502.175 221.123 412.134
+685.55 1205.75 1839.58 3099.22 1534.88 388.395 408.901 162.274 160.489 215.063
+214.526 160.391 53.4702 80.5949 50.0597 31.2767 52.0651 69.5388 16.0093 10.5106
+81.1095 48.8423 59.7896 25.5577 8.73746 8.86782 4.95859 5.59971 9.30181 4.03129
+22.928 11.9531 70.5172 79.695 85.0521 45.3572 99.1302 59.6629 45.0417 23.417
+87.2399 332.872 644.029 166.23 110.989 182.281 239.355 403.675 293.542 359.507
+218.587 203.982 160.069 344.561 472.623 404.219 146.941 434.741 354.294 246.767
+2312.88 3387.59 2412.48 1049.18 2670.87 406.116 637.39 77.8054 239.936 122.202
+68.5951 109.872 405.209 42.8197 20.8 21.294 22.8641 26.4032 11.5871 11.9402
+90.9514 47.1228 76.8672 27.0838 7.4393 5.58469 4.81539 5.30697 8.28522 10.3655
+33.2928 23.4499 73.952 71.4277 57.1311 139.377 19.6212 41.7756 24.9511 33.9181
+30.2865 184.136 209.812 469.27 251.281 266.422 282.916 248.001 504.344 456.421
+418.901 554.784 150.841 167.878 302.603 294.199 210.82 260.03 367.148 657.269
+1723.75 1161.19 2166.84 791.063 753.253 913.99 585.76 201.392 78.1263 40.695
+84.6779 68.6113 143.673 153.987 51.4197 24.6421 33.9362 41.5747 21.6275 8.50753
+75.2005 110.481 66.5923 22.3083 5.72575 6.41388 4.33347 2.62914 5.48634 11.8036
+7.57154 7.89273 77.7472 104.302 87.0509 50.9045 44.5834 78.34 62.0009 54.9923
+31.7324 138.778 306.116 565.734 1191.66 1100.43 916.167 1153.73 903.927 2446.69
+1010.98 164.921 204.573 152.31 246.597 256.195 263.652 324.899 177.408 228.754
+270.392 495.606 484.108 326.313 1024.11 654.936 502.902 157.628 117.944 159.09
+56.9182 59.8396 187.913 66.8949 39.2077 25.3915 97.1907 130.837 31.2642 21.4247
+56.1196 37.7552 82.496 44.7477 7.36427 14.0479 4.26265 2.02766 3.23654 7.09393
+3.88492 7.81185 16.8419 192.62 73.8153 69.4848 41.4784 28.4979 33.492 74.2865
+126.487 194.211 955.297 481.562 430.674 765.668 1805.74 2939.24 2586.47 2739.25
+1357.91 724.172 433.667 196.796 531.818 686.029 467.195 233.311 215.057 215.546
+588.592 495.56 115.232 353.641 544.823 780.292 762.664 488.789 89.672 52.2038
+35.2764 79.4704 161.427 13.5503 26.9162 35.672 57.0153 153.132 57.5178 63.4068
+56.6975 31.1216 111.031 104.928 10.8435 12.5198 8.96399 4.91823 4.4577 5.85379
+4.56125 10.4228 62.2773 98.1814 307.117 153.472 51.3412 130.408 71.3851 25.2048
+69.3342 384.48 724.462 1378.04 1410.75 802.628 1027.53 1781.35 1594.52 2432.72
+1520.59 853.823 460.935 239.175 195.508 227.966 264.326 344.203 431.165 146.574
+488.44 389.25 242.28 674.341 1100.07 678.439 583.221 81.6405 51.5631 33.0673
+64.8008 156.736 151.033 90.5311 54.0294 87.1092 59.1727 116.883 115.087 51.2184
+49.4846 37.337 19.8188 32.4347 23.8926 15.0755 12.2722 15.1368 4.80346 16.1839
+11.6858 34.8814 53.0921 134.021 98.325 63.2884 63.2773 145.12 89.6893 77.3558
+246.961 471.098 734.52 1932.68 4268.89 3599.1 2674.85 2881.82 1640.86 367.349
+211.46 400.612 258.453 254.129 142.878 164.616 288.449 998.997 410.616 308.156
+176.417 217.325 362.578 700.531 753.963 261.702 144.887 136.593 43.5651 107.553
+42.7297 27.8142 101.947 53.9861 23.8278 36.7699 103.985 134.622 73.8529 54.9114
+58.3015 30.2224 37.1376 20.7762 64.4863 22.8283 65.6168 13.1391 17.5461 10.9986
+19.8343 11.9556 21.8938 44.6508 74.7213 102.044 334.667 253.9 52.8324 157.898
+452.816 633.117 659.816 508.693 4424.38 8154.98 3557.02 3463.2 638.299 652.219
+420.97 162.109 185.46 214.331 103.657 248.26 605.251 310.561 321.782 927.703
+300.408 102.332 186.67 432.541 259.606 101.539 97.1914 84.5492 31.7583 114.909
+38.832 44.0581 64.7095 156.388 80.8029 125.106 123.183 129.256 174.244 75.0937
+38.2817 81.9451 73.4414 68.445 84.1828 65.0094 24.202 20.0125 18.3672 13.5596
+24.3744 25.2517 6.84128 44.6615 61.4967 150.292 588.301 176.139 66.4806 84.6886
+136.751 346.499 315.686 653.719 1559.55 9820.77 2138.09 1709.77 334.628 720.126
+291.168 208.804 490.515 169.565 282.649 129.91 296.085 397.57 353.414 239.545
+361.122 108.696 179.891 249.303 307.719 104.273 94.1912 55.1779 109.149 74.0114
+33.3936 27.0343 82.3409 162.161 176.961 191.768 202.04 182.742 154.598 124.658
+45.7327 65.3636 45.2332 94.2438 127.783 41.8903 11.2444 15.0039 22.1176 22.494
+18.0346 21.4278 36.7506 169.959 86.5053 224.162 285.632 196.33 154.209 226.596
+142.774 228.344 271.776 138.739 690.658 1276.23 327.866 388.908 555.341 922.142
+581.199 173.7 251.401 346.573 272.085 94.7112 111.334 94.6412 189.333 92.9357
+96.529 378.812 97.118 266.693 377.508 69.0122 70.3353 89.7882 52.2369 82.1893
+61.5123 162.299 72.6188 100.123 182.753 368.844 563.386 344.195 212.385 224.894
+12.0794 6.96811 13.6401 23.1133 39.0274 26.548 20.1708 23.6963 37.2142 11.1464
+34.7698 42.2158 71.2611 83.1402 65.1761 164.148 676.463 225.92 207.11 74.5883
+291.383 318.749 298.921 727.971 250.722 1082.85 404.553 383.854 331.447 422.655
+670.287 335.833 456.772 188.381 307.297 168.16 71.5286 57.4187 42.1109 71.7763
+191.279 100.528 79.4445 167.813 241.142 71.2482 77.6203 84.2346 36.8571 236.674
+113.989 91.7994 99.5197 260.539 310.671 127.456 483.953 3358.36 712.36 257.286
+1.21487 4.69482 15.1457 37.8848 27.2107 5.40776 8.14223 20.4986 11.6821 12.6685
+20.6275 35.4008 38.4599 38.2851 107.82 132.363 449.093 212.045 214.968 489.361
+868.524 847.996 583.716 232.568 98.425 180.486 109.929 349.526 147.891 587.508
+924.636 324.955 377.513 293.01 338.296 134.008 80.4823 45.9141 73.2414 84.0503
+45.1274 66.5413 110.658 94.8165 118.934 50.0192 48.7413 109.772 357.48 137.172
+91.2602 97.6734 240.98 313.407 227.214 260.168 472.54 1405.07 582.212 211.89
+1.27431 7.26894 13.3642 32.6275 23.5945 12.1167 7.12369 10.8687 19.1133 35.3148
+32.2386 44.1305 14.6919 23.4161 95.5473 255.067 138.837 97.3005 154.551 408.74
+452.019 905.623 320.89 269.61 99.9324 76.1756 48.0118 112.183 139.03 133.592
+204.678 121.194 432.395 336.196 152.576 112.526 44.3264 73.0053 38.6753 59.5764
+81.7723 87.2967 71.484 29.4096 91.9449 74.7391 76.028 278.28 226.333 246.343
+250.577 127.934 148.681 384.246 179.419 862.611 587.345 509.829 534.588 516.322
+1.30457 7.16797 16.2951 17.0613 20.6087 7.54569 3.75101 8.74196 40.3185 53.4048
+67.193 75.5073 204.134 43.7842 25.3278 45.3329 50.2827 29.3106 76.5537 132.058
+331.937 272.581 132.541 164.907 80.7762 66.9542 93.2007 101.341 112.208 207.794
+128.803 86.4269 110.66 143.297 99.4194 68.8305 141.854 63.9732 71.0969 72.3832
+56.0282 77.9382 22.4061 85.5682 163.145 44.4014 64.3127 216.852 276.036 278.167
+218.998 156.151 79.5321 177.434 168.862 436.236 805.117 498.357 627.783 415.043
+1.80451 16.6646 34.427 20.0175 23.4669 14.6306 19.1555 25.5808 45.9441 28.5929
+485.705 244.06 188.875 41.6427 19.5886 43.2466 22.5685 14.3146 25.009 71.0609
+58.3753 94.9985 191.21 109.099 77.6727 106.924 144.004 67.0301 228.584 127.667
+145.021 47.5722 133.974 140.639 104.091 235.841 126.622 83.0442 84.5069 46.8018
+31.5718 53.6039 30.9789 174.223 176.114 185.558 98.2725 54.9268 168.42 189.881
+350.732 145.129 110.636 144.885 266.278 582.83 920.797 1024.45 715.139 735.738
+8.57008 13.9964 27.3593 48.8463 71.621 50.3912 82.0414 18.6808 51.9339 54.0203
+147.56 104.369 148.165 28.6143 41.125 32.193 16.439 20.2916 38.9869 59.6645
+138.122 26.4872 138.037 85.8941 91.9876 102.267 56.0531 57.9608 143.493 159.199
+254.711 83.6459 249.328 76.4369 84.5265 171.313 127.197 56.2383 73.5365 61.913
+60.566 24.3878 35.7227 107.385 91.2094 508.448 457.957 186.108 178.223 237.736
+342.305 439.044 96.6458 109.017 364.785 442.134 845.661 1099.57 822.806 1318.62
+29.1955 5.23936 14.9566 21.0118 21.3233 145.258 40.4961 30.2956 82.8073 90.2183
+97.13 54.3622 88.3743 36.9415 32.2842 27.8818 9.74873 39.9342 24.766 19.5656
+36.9211 32.6813 20.6755 63.8837 145.445 92.838 182.288 247.714 394.211 430.36
+231.061 227.509 149.821 113.204 323.383 194.661 104.473 119.576 95.381 73.8099
+207.084 170.307 64.4734 63.945 190.095 355.379 1063.81 186.614 258.345 546.013
+526.815 266.886 386.088 483.392 453.477 947.162 1324.59 1984.06 1198.84 1260.64
+21.5104 17.1738 15.1662 22.9201 49.0347 81.8685 55.7069 72.5772 88.9606 29.8389
+52.5633 47.3363 151.75 70.0225 42.4876 15.2291 5.09948 16.766 11.5449 13.1188
+9.90897 25.4474 46.3009 21.4849 166.274 77.4423 127.968 368.378 230.703 741.489
+713.442 347.241 215.562 324.489 336.557 94.0549 202.596 230.738 59.3821 31.5605
+86.1488 55.0417 366.793 316.216 717.997 380.35 642.829 268.834 372.51 1154.08
+1248.78 562.236 2041.73 2075.22 2779.14 2403.34 1811.44 1588.37 1117.36 1323.66
+20.6656 7.88924 30.5988 39.0192 84.3032 65.6006 84.5574 169.246 263.849 251.289
+241.337 70.9478 64.3961 32.3694 19.178 11.6462 8.5523 12.1455 17.3189 6.13408
+12.2861 13.6326 35.224 20.3946 271.052 406.707 239.402 361.838 499.006 529.226
+724.785 925.188 574.955 292.668 219.901 131.016 552.119 99.5586 117.547 87.3079
+206.127 141.381 307.718 308.628 510.574 1235.48 851.83 631.693 678.323 898.377
+2623.31 1132.03 1600.27 5988.62 9752.96 2789.57 2072.75 2120.29 1023.48 672.869
+/
+PERMZ
+0.000762835 0.000403885 0.000660116 0.00037738 0.000362271 0.000716426 0.000746622 0.000949406 0.00081349 0.000599188
+0.000391344 0.000810727 0.000297128 0.000849466 0.00117895 0.0007764 0.000650457 0.000985067 0.00538854 0.00357084
+0.00279736 0.000766287 0.000125903 0.000155166 9.30796e-05 5.1217e-05 0.000124489 8.57816e-05 0.000308811 0.000307213
+0.00015914 7.42461e-05 8.00607e-05 0.000302238 0.000143723 8.79817e-05 0.000223832 0.000584761 0.000656044 0.000543538
+0.00176731 0.00135297 0.00411362 0.00330614 47.5374 24.7999 49.4988 39.0561 14.2836 0.00146368
+0.000744249 0.000484485 0.000365651 0.000277773 0.000218182 0.000133768 0.000278478 0.000703112 0.000651472 0.00207407
+3.21156 0.000198132 0.000289136 0.000285825 0.000654055 0.000598921 5.07288 5.30199 0.000680342 0.000756764
+0.000418937 0.00135948 0.000795662 0.00184594 0.000981836 0.00263655 0.00550767 0.00410184 0.00473872 0.00412232
+0.0019925 0.0003288 0.000133063 0.000104085 4.41781e-05 0.000141446 0.000106714 0.000127202 0.000388435 0.000286352
+0.000107586 0.000170383 0.000153114 0.000291754 0.00013743 0.000157718 0.000576377 0.0013288 0.000293138 0.000154702
+0.00136285 0.00561573 0.00558542 0.00472602 14.1976 15.4166 14.8539 41.7645 11.2 0.000758039
+8.78371e-05 0.00032175 0.000137109 0.000117399 0.000399426 0.000248068 0.00087924 0.000876781 0.00264615 0.00196632
+5.31318 0.000521732 0.000619582 0.00105918 3.8946 0.000515694 10.2204 5.83368 0.00159205 0.00161767
+0.00177631 0.00189632 0.00261688 0.00123118 0.00210407 0.0021805 0.00472189 0.00477633 0.00627921 0.0019937
+0.000596551 0.000414878 0.000214718 0.000217136 0.00020632 5.81669e-05 0.000163302 0.000453838 0.000634386 0.000282886
+0.000385838 0.00039528 0.000772059 0.000282408 0.000559676 0.000604127 0.00181715 0.000700465 0.000533083 0.000288615
+0.00208794 0.0022282 0.00387581 39.8781 29.4783 25.5347 23.9924 12.5879 0.00113935 0.000466163
+0.000504229 0.000244032 8.94884e-05 0.00023036 0.000297532 0.000335976 0.000452944 0.00122364 0.00171831 0.00227871
+0.000958388 0.00110824 0.00153216 8.84115 0.000582498 0.000662098 6.69474 14.3203 15.4723 0.00141274
+0.00433329 0.00212919 0.00171293 0.00396214 12.7962 0.00222342 0.00509284 0.00488042 0.00242238 0.000784365
+0.000791384 0.000720806 0.000422001 0.000218575 0.000274395 0.00012935 0.000341521 0.000297109 0.000262745 0.000185031
+0.000437508 0.000221569 0.000708233 0.000321111 0.00041221 0.00039141 0.000591004 0.000516409 0.00136926 0.000488277
+0.00129693 0.00559875 44.3766 38.6175 54.5511 22.0041 30.6414 14.6335 0.00246031 0.00253573
+0.000593578 0.000204273 0.000154671 0.000551415 0.000807565 0.000409397 0.000772781 0.000917309 13.7398 20.0999
+10.5351 0.00115585 0.00106273 5.49519 0.000593028 0.000446334 13.9145 20.5471 10.8962 0.00432853
+0.0027989 0.000499397 0.0015167 0.00384752 0.00279342 0.00266518 0.00314401 0.00147005 0.00095276 0.00112106
+0.00125568 0.000545445 0.000219931 0.000165944 0.000217792 0.000184364 0.000257007 0.000326733 0.00058106 0.000210224
+0.000152309 0.000447007 0.000365979 0.000479062 0.00110209 0.000333614 0.000478544 0.000641861 0.000339625 0.000769099
+17.233 18.5676 29.1759 55.8759 39.6297 29.6742 65.6847 20.0116 10.4057 0.00128601
+0.00037641 0.000531032 0.000392004 0.000513374 0.000495139 0.000650453 0.00067495 0.00144293 0.00394397 12.3373
+6.05568 0.00045578 0.000715487 0.000829941 17.9654 0.000967495 0.000995057 0.00199662 0.000864997 0.000966465
+0.00100591 0.000965032 0.003868 0.00163553 0.004082 0.0030793 0.00248883 0.00131601 0.000648218 0.00132503
+0.00211232 0.00118212 0.000432496 0.000378951 0.000541236 0.000243943 0.000261484 0.000198122 0.000300627 0.000224703
+0.00020488 0.000555844 0.000509769 0.000709221 0.00112569 0.000604015 0.00125018 0.00190564 0.000873149 0.00223956
+0.00202501 23.0136 27.7044 60.2403 28.7404 64.8417 46.3233 40.2267 14.5361 0.000776506
+0.000938466 0.00085251 0.00181113 0.00134201 0.00127564 0.00107767 0.000696351 0.0019668 0.0025644 14.3726
+11.021 0.00162034 0.000799347 0.000614896 9.05187 4.80777 0.00103094 0.0009797 0.000354067 0.000470457
+0.00121397 0.00127788 0.0033601 0.00285505 0.00270398 0.00126101 0.000776588 0.000913266 0.00327103 0.00206781
+0.00362045 0.00145871 0.000616043 0.000415687 0.000857666 0.000232032 0.000252943 0.000372705 0.000383927 0.000355414
+0.000235995 0.000450693 0.000257774 0.00097328 0.00070609 0.000585894 0.00153599 0.00139357 0.000720296 0.00147977
+0.00278341 19.3691 11.1639 29.2673 27.0759 94.6185 140.075 93.2142 0.00380354 0.00136568
+0.000715633 0.00138062 0.0018851 11.067 0.0026143 9.62001 0.0018787 0.00150812 13.0714 12.7401
+10.5853 6.95841 0.00218008 7.51044 8.96595 0.0011556 7.90206 0.000564492 0.000404891 0.000253338
+0.000781086 0.00294304 0.00173356 35.1603 12.211 16.7153 0.002755 0.00157276 24.8224 0.00147918
+0.000752954 0.000372065 0.000700457 0.000479215 0.000598537 0.00141591 0.000341908 0.000435597 0.000401701 0.000906687
+0.000724602 0.00207625 0.000546266 0.000701385 0.00141368 0.000555641 0.00069742 0.00133336 0.000806251 0.00156466
+0.0024551 13.6218 22.7961 24.0707 11.2986 46.3836 65.9331 40.5099 0.00994995 0.00299368
+0.000986667 0.000514481 0.00141317 12.3515 12.8252 20.9814 0.00703933 0.00353459 20.24 23.7277
+27.4454 12.1891 0.00150065 13.3636 18.4612 12.5164 0.00240839 0.000598118 0.00125148 0.000870925
+0.00220323 0.00270736 13.4178 23.9107 24.1138 20.5284 32.5875 0.00553159 0.00322337 0.00350923
+0.00191645 0.00170876 0.000593077 0.000404921 0.000389318 0.000474693 0.000244717 0.00111874 0.00112212 0.000830951
+0.000566603 0.000727567 0.000870484 0.000620137 0.000547108 0.00150068 0.00192071 0.00128842 0.000355109 0.00127625
+11.8494 25.429 0.00288318 0.00380359 9.47358 20.6907 32.9031 0.0025882 0.00360534 0.00175694
+0.00112541 0.000482554 0.00221748 0.00315197 0.00580877 15.6851 0.00304774 0.00270311 30.8202 0.0057778
+19.4057 15.9947 0.0016836 12.1825 8.13645 17.994 11.3597 8.88189 0.000982437 0.000636677
+0.0016707 0.001777 0.000908237 8.84685 10.2158 12.8398 52.4196 16.4866 0.00352315 0.00353904
+0.000979062 0.00068988 0.000354242 0.00044516 0.00031142 0.000240508 0.000261942 0.000448909 0.00038002 0.00187693
+0.00184975 0.00118583 0.00052845 0.00117735 0.000765626 16.3572 13.7131 0.00178551 0.000852231 0.00230062
+0.00162128 0.00466508 0.00422073 0.00481347 23.7593 39.2808 36.7593 22.296 0.00307687 0.00212208
+0.00125787 0.00250309 0.00237188 17.6487 0.00378014 0.00267907 0.00343079 0.00171487 0.0104337 0.00625252
+0.00158061 25.8017 8.7276 16.3325 25.6796 11.2312 8.24439 0.00248733 0.00308742 0.000731761
+0.000772658 0.000300643 0.000306273 10.9444 8.17347 12.4598 16.9227 0.0031738 0.00181265 0.00173559
+0.00128923 0.00116237 0.000634235 0.000220057 0.000170642 0.000136543 0.000161989 0.000323262 0.00121015 0.00216203
+0.00329737 0.00140187 0.00080373 0.00146656 0.0022941 0.00346594 0.00174639 0.0036948 0.000649647 0.00159971
+0.00159983 0.00283332 0.00497788 0.0042192 37.1664 84.7785 120.334 31.9011 18.5993 0.00252464
+0.00155853 0.00141999 0.00192486 0.00223512 0.00132513 0.00273713 0.00273343 0.00513722 0.00534593 0.00484271
+0.00046417 0.000718294 5.43054 12.4142 7.93317 12.4693 18.7059 17.1098 22.7568 8.01117
+11.0815 3.09255 5.46153 3.87813 15.2524 0.000764391 0.000956954 0.000752674 0.00134501 0.0011353
+0.000774768 0.000394851 0.000556901 0.000310886 0.00013877 0.000371029 0.00039522 0.000194623 0.000531905 13.6791
+0.00277281 0.00349846 21.0061 0.00272869 0.00336694 0.00213838 0.00190672 0.000973388 0.00164058 0.00099229
+0.00609817 21.6465 49.8348 76.293 108.902 81.1836 0.00482968 33.7806 0.00289847 0.00233959
+0.001403 0.0023387 0.00192429 0.00168056 0.0013109 0.00370299 0.00273088 0.00340497 0.00595686 0.0014434
+0.000673712 5.41506 9.85407 18.3865 6.66333 19.8032 18.3143 41.4099 60.8694 34.6419
+5.89881 6.29874 9.58236 6.96057 4.91952 5.88762 0.00166568 0.00128253 0.00104205 0.00110123
+0.00113672 0.00090024 0.00101004 0.000392611 0.000941976 0.000761944 0.000563683 0.000820955 0.000919557 0.00201509
+0.00157337 12.5953 30.6432 26.2072 0.0037869 23.0632 0.00374562 0.00477371 0.00415986 0.00211583
+33.8334 46.8441 98.3664 275.801 534.378 48.819 31.0074 0.00483543 0.00412832 0.00208211
+0.00169892 0.00242653 0.00652473 0.00308788 0.00409808 0.000633752 0.00370348 0.00336987 0.00483644 0.00514478
+7.1967 15.9574 9.55065 9.73212 10.5472 14.7616 67.5384 54.5427 142.7 28.4509
+6.30777 6.06978 5.29962 16.5845 30.3708 8.07669 0.00122561 0.00203814 0.00146504 0.00180476
+0.00145448 0.00111547 0.000719099 0.000421683 0.000966141 0.000536894 0.000990163 0.000971096 0.00170372 22.2565
+32.1588 22.676 42.6246 19.5706 26.5591 21.3133 45.6063 21.8833 0.00690625 0.00637102
+42.2517 146.265 609.381 153.679 416.091 47.3934 0.0102688 0.00326682 0.00309009 0.00522245
+0.00217307 0.00212284 0.00793485 29.0585 0.00614248 0.000919567 0.00313197 0.00407983 0.00388721 0.00310897
+10.0417 16.3996 31.5918 15.2821 18.6676 39.5961 68.7825 41.6274 74.4015 31.7565
+8.88039 4.46769 5.91612 8.02572 8.82345 0.00193771 0.000504387 0.00100754 0.00200918 0.00134489
+0.00058373 0.000582501 0.000469965 0.000153771 0.000654862 0.000618703 0.000665574 0.00119414 0.00149412 31.3173
+30.3999 62.2437 100.821 75.4707 99.5433 122.165 43.0284 46.6266 48.1368 98.889
+61.3722 222.044 397.635 273.486 119.447 47.4429 0.012081 0.00488267 0.00317811 0.00160533
+0.00125108 0.00158319 0.00452642 0.00494197 0.00582082 0.0042081 0.00465278 0.00346259 0.00367423 0.00170381
+40.4883 23.8698 21.4729 12.5117 26.9343 31.5015 30.426 39.759 14.1543 7.22148
+11.1692 6.32376 9.6465 23.2087 7.86528 0.000670934 0.00127293 0.00125178 0.000762103 0.000734655
+0.000304009 0.000377578 0.000302227 0.000455362 0.000445918 0.000635058 0.000864894 0.00212632 0.00243743 26.3326
+17.7199 26.8591 23.5412 53.553 181.445 145.426 174.147 78.3234 100.543 87.6957
+93.0486 83.5035 313.38 84.3888 0.0149643 0.0151662 0.0136738 0.00359167 0.00205044 0.00144723
+0.00131928 0.000995167 0.00284697 37.3308 74.1585 0.00974723 0.00508905 0.00426615 0.00405261 0.00259182
+44.4435 22.608 26.8963 8.04018 21.5659 34.4526 52.9641 32.1054 10.4603 4.97673
+4.33413 3.75192 14.6302 4.39614 9.25536 0.00078305 0.00121775 0.000736201 0.000446343 0.000626901
+0.000525972 0.000367915 0.00103437 0.00115134 0.000428181 0.000720139 0.000281055 0.000655014 0.00175583 0.00199688
+0.00612471 0.00145167 0.00401379 90.3216 468.642 358.962 108.958 59.9481 58.2528 121.688
+89.6835 220.807 121.774 55.6599 0.0111587 39.4935 0.00771014 0.00537973 0.00185777 0.00129576
+0.000661679 0.00183496 0.00233575 0.00278718 0.00656302 0.00571992 0.00467138 0.00133754 0.000520161 0.00103814
+56.0781 25.2219 13.5222 0.00117242 17.9561 24.781 30.336 31.4211 7.43151 0.000794419
+5.09031 6.18039 8.31246 6.25179 11.2935 9.5328 0.00104782 0.00165774 0.0022013 0.00102945
+0.00270622 0.00130981 0.00145024 0.00103983 0.000358376 0.00108591 0.00122233 0.00146486 0.000919856 0.00134818
+0.00660026 0.00259823 41.0712 262.784 798.246 384.978 120.265 140.001 119.718 54.1566
+131.877 156.535 112.425 47.928 0.00371957 0.00859656 0.00491792 0.00388989 0.00261765 0.00249595
+0.000583116 0.00280691 0.00273036 0.00209041 0.00299232 0.00342015 0.00197702 0.00061003 0.00120461 0.00112985
+35.0214 8.43402 17.2244 12.1693 23.8016 35.0133 47.1249 17.152 0.0014524 3.11298
+0.000922906 4.18356 6.8391 8.79438 0.0013647 0.00129773 0.00116009 0.00112544 0.000768994 0.00151663
+0.00610763 0.00362997 0.00383239 0.00158576 0.00138692 0.00149138 0.00146006 0.00262173 0.00230019 0.00436342
+0.00304911 0.00557396 27.1171 313.428 928.659 966.324 474.645 125.939 0.00564722 39.768
+59.6916 188.905 30.9051 0.00888928 0.00258543 46.1985 47.1009 0.00416463 0.00118086 0.00156281
+0.00132363 0.00110644 0.000940354 0.00397515 0.00475643 0.00494556 0.00104057 0.00125083 0.00049052 0.000879519
+69.0468 28.426 23.2073 10.3473 21.9032 25.2926 10.2035 19.7622 3.69873 5.27166
+3.51015 7.09425 5.08086 0.00143865 0.00229279 0.00148241 0.000702213 0.00139286 0.00246411 0.00269962
+0.00317861 0.00673671 0.00199985 0.00282531 0.000920859 0.00197001 0.00115479 0.0014675 0.00389477 0.00403528
+0.00548535 0.00630194 135.275 1053.74 521.646 120.079 103.048 93.2802 46.809 47.4297
+94.5399 99.4419 99.0783 0.0110875 0.0104454 44.298 0.00817812 0.0091545 0.00381661 0.00424143
+0.000663923 0.00128856 0.00119823 0.00481425 0.00319221 0.00196013 0.00146306 0.000184626 0.000626632 0.000334762
+14.2247 15.1328 24.3811 37.2924 25.7724 8.23461 9.2691 8.74386 5.10621 0.00095643
+3.36201 8.12004 8.27775 5.79204 0.00247847 7.07886 0.00074973 0.0011081 0.000838782 0.00584262
+0.0050094 0.00329277 0.00330137 0.000932571 0.00074527 0.00217957 17.0658 0.00421461 34.5966 25.5711
+14.5863 43.1496 34.3947 88.4157 494.193 151.343 63.0453 115.36 96.7503 176.995
+119.308 125.63 526.05 197.812 107.261 221.688 84.3231 0.0082507 40.8579 0.00764737
+0.00457249 0.00334299 0.00188194 0.00175521 0.00118923 0.000747905 0.000434838 0.000394375 0.000325485 0.000191034
+19.0622 13.8127 25.5899 39.3753 0.00242001 7.23543 8.57133 4.82301 0.00061607 0.000854552
+0.000506676 7.27824 5.53413 13.7684 12.386 0.00176425 0.00134543 0.001512 0.00294587 23.3363
+27.7348 30.4599 0.00124231 0.00405942 0.00114035 0.00329241 0.00304445 0.00389273 17.2822 90.7338
+24.939 72.4848 65.916 71.4162 90.2541 126.757 86.0469 359.988 126.445 178.954
+76.3077 104.937 517.767 176.64 179.599 216.393 144.727 71.6694 42.1878 0.0125418
+0.0052455 0.00211256 0.00103769 0.000558853 0.00134824 0.000784461 0.000296352 0.00042878 0.000401529 0.000610125
+0.0017523 17.15 27.7826 35.9565 16.1689 0.000698471 3.85617 0.000817506 0.000262537 0.000466473
+3.46143 4.97211 4.78692 11.7585 0.00127064 0.00203379 0.00282765 7.17348 10.671 24.7798
+0.00401316 17.2689 0.00257224 0.00205747 0.00118236 0.00130254 0.00133414 0.00364756 0.00766234 159.595
+39.8235 64.6047 156.535 158.762 26.2929 75.5301 133.606 71.9796 109.201 115.054
+119.269 92.2005 329.838 117.949 250.165 341.76 445.143 231.27 107.203 69.0438
+0.00931352 0.00217076 0.00125533 0.00113716 0.000560296 0.000981726 0.00112922 0.000978065 0.000155667 0.000304504
+19.4826 0.00171216 12.8801 9.24267 27.8309 13.2644 0.00136206 0.000595012 0.000205807 0.000250923
+0.00040192 9.40296 6.65331 6.68769 0.00320989 0.00132944 0.00149987 0.00163734 0.00264271 0.00520306
+0.00261269 0.00194514 0.00244363 13.6833 0.00255835 0.00429299 0.00382265 0.00603007 42.2775 89.22
+79.8981 36.093 233.862 240.424 123.252 60.3198 55.0524 112.721 114.415 143.689
+49.0761 55.1391 107.119 167.94 229.797 239.968 671.871 827.694 144.626 0.0162218
+51.3594 0.00870324 0.00383781 0.00153789 0.00130404 0.00234676 0.00135287 0.000958327 0.000756764 0.000239579
+17.602 7.73796 17.0163 39.7083 14.5839 13.5397 18.032 13.1448 0.00125016 6.74919
+4.79256 13.34 8.70582 13.5106 13.0007 20.2911 0.00137419 0.000924848 0.00286359 0.000732442
+0.00148388 0.00104146 0.00117061 0.00276984 25.4932 50.5422 35.9127 54.6108 94.3962 83.8776
+86.5968 53.1603 207.321 119.662 93.7032 124.509 44.7174 211.391 105.374 138.498
+100.932 86.6142 74.2014 274.362 297.997 809.574 565.647 1305 244.103 132.076
+96.9282 0.00997385 0.00189376 0.00195556 0.00237139 0.00442356 0.00254798 0.00188305 0.000413107 0.000502941
+18.2249 47.2377 22.9005 31.2894 36.8286 21.1127 9.60744 7.3797 15.2104 9.93732
+5.78421 11.5726 5.10669 12.2114 0.000565697 0.00156211 0.000658651 0.000459868 0.00084437 0.00080631
+0.000688562 0.000328204 0.00217924 0.00500245 78.2523 158.058 110.061 100.683 65.2092 59.8854
+35.1963 57.8217 136.719 288.352 81.627 99.7743 120.754 157.49 161.597 93.3543
+160.16 250.404 118.937 180.066 475.338 1336.03 2217.16 720.057 296.149 102.97
+89.286 0.00348298 0.00744899 0.00367625 0.00159296 0.00299259 0.00835701 0.000601778 0.00114812 0.00273864
+5.70678 6.11283 15.9361 41.3835 32.4435 20.5957 12.6154 9.39132 6.92313 7.2765
+6.67926 6.27933 20.3772 21.9717 16.1614 12.5845 0.00120574 0.000183108 0.000600862 0.000792371
+0.00013362 0.000312371 0.000980245 0.00197313 0.014315 111.618 150.311 100.137 51.5508 38.9109
+40.1655 40.6137 134.797 355.125 495.66 208.027 184.57 149.816 133.539 0.0140913
+154.338 247.94 122.164 91.3866 330.939 930.573 1236.83 440.547 295.321 109.918
+102.183 0.0100019 0.00330732 0.00415703 0.00463072 0.00651916 0.00357001 0.00347666 0.00231718 0.00364678
+0.00068137 0.000749272 0.00207957 17.0762 10.23 22.9007 16.0157 9.43494 10.1126 4.71
+0.0018369 7.15704 19.3995 13.3897 0.00183383 6.01053 0.00124614 0.00139178 0.0016353 0.00175401
+0.000916951 0.00105219 0.00207633 0.00381621 33.783 109.918 167.716 122.125 43.4535 39.7305
+70.3986 40.7331 46.4472 603.333 396.411 373.359 185.492 129.126 0.0325457 0.0184887
+0.0232776 198.915 254.781 265.923 726.675 727.356 939.453 666.252 625.179 191.367
+144.755 232.918 0.0105819 0.00627651 0.00858146 0.00331698 0.00183317 0.0023677 0.00235924 0.00432612
+0.000654525 12.0186 8.71617 17.1813 9.56481 7.07817 0.00185076 0.00124999 0.0019395 0.00120417
+8.56839 8.7219 0.00255129 0.00117861 0.00107726 14.7339 32.9124 0.004775 0.00186599 0.00142543
+0.0016238 0.00137341 12.5839 0.00545257 40.5327 57.429 120.65 47.3994 119.409 88.2123
+56.5053 159.556 102.354 221.04 337.032 321.543 167.218 95.9391 0.0258529 0.0307859
+120.052 299.735 0.0452486 294.45 453.48 1189.93 418.812 311.079 296.606 109.603
+76.0731 224.757 0.018014 0.0069426 0.00598888 0.00596393 0.00197172 0.0016481 0.00151066 0.00295791
+0.00051572 0.00111076 0.00149242 16.7864 4.96455 0.000686473 0.000839603 0.00118425 0.00127216 0.00183218
+0.00178062 0.0037441 0.00180001 0.000273054 0.00155209 0.00360339 23.6058 0.0041682 0.00468437 0.00539565
+0.0039887 31.2801 18.9965 19.5913 47.2251 29.9439 58.518 41.5827 117.05 203.883
+158.385 194.054 530.97 202.193 410.25 165.55 0.0245715 200.49 0.0342247 0.0271407
+262.221 400.317 0.084949 424.461 221.408 361.059 230.456 73.1631 169.82 87.7224
+121.336 38.4321 0.00860268 56.0352 29.249 31.182 0.00122344 0.00315909 0.00305202 0.00413129
+3.75744 0.000830477 0.00525087 14.3559 0.000556032 0.000619903 0.000264132 0.00022065 0.000587085 0.00116981
+0.00218809 0.0019573 0.00128304 0.00115763 0.00254171 0.00412547 0.00505742 0.00525979 0.00266371 0.00460102
+0.00923795 12.4438 22.7747 49.0512 70.8906 78.9153 136.582 109.041 66.774 90.8478
+130.789 95.3898 106.59 45.6771 169.93 111.12 214.979 144.549 0.0237285 0.0416388
+0.0547323 340.395 351.69 979.506 455.856 263.561 102.254 66.9765 67.5519 68.8632
+59.5677 67.8084 48.9957 59.442 37.5303 13.2344 13.3793 22.0258 0.00160422 0.00193293
+7.71192 0.00125655 0.00167692 13.8386 0.0013062 0.000832068 0.000181363 0.000338145 0.000696019 0.000526844
+0.001353 0.000965994 0.00134378 0.00285921 0.00344531 0.00464427 23.5133 0.00375988 0.0063059 0.00491531
+30.3717 123.566 148.867 122.86 168.109 82.4298 103.356 87.5601 49.6782 189.362
+60.8832 0.00928656 68.7096 100.574 51.7998 61.6308 0.0162487 150.653 0.0221123 0.0412134
+0.068555 361.725 551.874 929.766 460.464 116.518 122.67 0.0162274 48.1467 64.5189
+64.3578 48.1173 0.00534702 0.00805949 0.00500597 0.00312767 15.6195 20.8616 0.00160093 0.00105106
+24.3328 14.6527 17.9369 0.00255577 0.000873746 0.000886782 0.000495859 0.000559971 0.000930181 0.000403129
+0.0022928 0.00119531 0.00705172 23.9085 25.5156 0.00453572 0.00991302 0.00596629 0.00450417 0.0023417
+0.00872399 99.8616 193.209 49.869 0.0110989 54.6843 71.8065 121.102 88.0626 107.852
+0.0218587 61.1946 0.0160069 103.368 141.787 121.266 0.0146941 0.0434741 0.0354294 0.0246767
+693.864 0.338759 723.744 314.754 801.261 121.835 191.217 0.00778054 71.9808 0.0122202
+0.00685951 32.9616 121.563 0.00428197 0.00208 0.0021294 0.00228641 0.00264032 0.00115871 0.00119402
+27.2854 14.1368 23.0602 0.00270838 0.00074393 0.000558469 0.000481539 0.000530697 0.000828522 0.00103655
+0.00332928 0.00234499 22.1856 21.4283 17.1393 41.8131 0.00196212 0.00417756 0.00249511 0.00339181
+0.00302865 55.2408 62.9436 140.781 75.3843 79.9266 84.8748 0.0248001 151.303 136.926
+125.67 166.435 0.0150841 50.3634 90.7809 88.2597 0.021082 0.026003 0.0367148 0.0657269
+0.172375 0.116119 650.052 237.319 225.976 274.197 175.728 60.4176 0.00781263 0.0040695
+25.4034 20.5834 43.1019 46.1961 15.4259 0.00246421 0.00339362 12.4724 6.48825 0.000850753
+22.5602 33.1443 19.9777 0.00223083 0.000572575 0.000641388 0.000433347 0.000262914 0.000548634 0.00118036
+0.000757154 0.000789273 23.3242 31.2906 0.00870509 0.00509045 0.00445834 0.007834 0.00620009 0.00549923
+0.00317324 41.6334 91.8348 169.72 357.498 330.129 274.85 346.119 271.178 734.007
+303.294 0.0164921 0.0204573 0.015231 0.0246597 0.0256195 0.0263652 0.0324899 0.0177408 0.0228754
+0.0270392 0.0495606 0.0484108 0.0326313 307.233 196.481 150.871 0.0157628 0.0117944 47.727
+17.0755 17.9519 56.3739 20.0685 11.7623 7.61745 29.1572 39.2511 9.37926 6.42741
+16.8359 11.3266 24.7488 13.4243 0.000736427 0.00140479 0.000426265 0.000202766 0.000323654 0.000709393
+0.000388492 0.000781185 0.00168419 57.786 0.00738153 0.00694848 0.00414784 0.00284979 0.0033492 0.00742865
+0.0126487 0.0194211 286.589 144.469 129.202 229.7 541.722 881.772 775.941 821.775
+407.373 217.252 130.1 0.0196796 159.545 205.809 140.159 0.0233311 0.0215057 0.0215546
+176.578 0.049556 0.0115232 0.0353641 163.447 234.088 228.799 146.637 26.9016 0.00522038
+0.00352764 23.8411 48.4281 0.00135503 0.00269162 10.7016 17.1046 45.9396 17.2553 19.022
+17.0092 9.33648 33.3093 31.4784 0.00108435 0.00125198 0.000896399 0.000491823 0.00044577 0.000585379
+0.000456125 0.00104228 0.00622773 0.00981814 92.1351 0.0153472 0.00513412 0.0130408 0.00713851 0.00252048
+0.00693342 115.344 217.339 413.412 423.225 0.0802628 308.259 534.405 478.356 729.816
+456.177 256.147 138.28 71.7525 0.0195508 0.0227966 79.2978 0.0344203 0.0431165 0.0146574
+146.532 0.038925 0.024228 202.302 330.021 203.532 174.966 0.00816405 0.00515631 9.92019
+19.4402 47.0208 45.3099 27.1593 16.2088 26.1328 17.7518 35.0649 34.5261 15.3655
+0.00494846 0.0037337 0.00198188 0.00324347 0.00238926 0.00150755 0.00122722 0.00151368 0.000480346 0.00161839
+0.00116858 0.00348814 0.00530921 40.2063 29.4975 0.00632884 0.00632773 0.014512 0.00896893 0.00773558
+0.0246961 0.0471098 0.073452 579.804 1280.67 1079.73 802.455 864.546 492.258 0.0367349
+0.021146 120.184 0.0258453 0.0254129 0.0142878 0.0164616 0.0288449 299.699 123.185 92.4468
+0.0176417 0.0217325 108.773 210.159 226.189 0.0261702 0.0144887 0.0136593 0.00435651 32.2659
+0.00427297 0.00278142 30.5841 16.1958 0.00238278 11.031 31.1955 40.3866 22.1559 16.4734
+17.4904 0.00302224 0.00371376 0.00207762 19.3459 0.00228283 19.685 0.00131391 0.00175461 0.00109986
+0.00198343 0.00119556 0.00218938 0.00446508 0.00747213 0.0102044 100.4 76.17 0.00528324 0.0157898
+135.845 189.935 0.0659816 0.0508693 1327.31 2446.49 1067.11 1038.96 0.0638299 0.0652219
+0.042097 0.0162109 0.018546 0.0214331 0.0103657 0.024826 0.0605251 0.0310561 0.0321782 278.311
+0.0300408 0.0102332 0.018667 0.0432541 0.0259606 0.0101539 0.00971914 0.00845492 0.00317583 34.4727
+11.6496 13.2174 19.4129 46.9164 24.2409 37.5318 36.9549 38.7768 52.2732 22.5281
+11.4845 24.5835 0.00734414 0.0068445 25.2548 19.5028 0.0024202 0.00200125 0.00183672 0.00135596
+0.00243744 0.00252517 0.000684128 0.00446615 0.00614967 45.0876 176.49 0.0176139 0.00664806 0.00846886
+0.0136751 0.0346499 0.0315686 0.0653719 0.155955 2946.23 0.213809 512.931 0.0334628 0.0720126
+0.0291168 0.0208804 147.154 0.0169565 0.0282649 0.012991 0.0296085 0.039757 106.024 0.0239545
+0.0361122 0.0108696 0.0179891 0.0249303 0.0307719 0.0104273 0.00941912 0.00551779 32.7447 22.2034
+0.00333936 8.11029 24.7023 48.6483 53.0883 57.5304 60.612 54.8226 46.3794 37.3974
+13.7198 0.00653636 0.00452332 0.00942438 38.3349 12.5671 0.00112444 0.00150039 0.00221176 0.0022494
+0.00180346 0.00214278 0.00367506 50.9877 25.9516 0.0224162 85.6896 0.019633 0.0154209 0.0226596
+0.0142774 0.0228344 0.0271776 0.0138739 0.0690658 0.127623 0.0327866 0.0388908 0.0555341 0.0922142
+0.0581199 0.01737 0.0251401 103.972 81.6255 0.00947112 0.0111334 0.00946412 56.7999 0.00929357
+0.0096529 113.644 0.0097118 0.0266693 0.0377508 0.00690122 0.00703353 0.00897882 0.00522369 24.6568
+18.4537 48.6897 21.7856 30.0369 54.8259 110.653 169.016 103.258 63.7155 67.4682
+0.00120794 0.000696811 0.00136401 0.00231133 0.00390274 0.0026548 0.00201708 0.00236963 0.00372142 0.00111464
+0.00347698 0.00422158 0.00712611 0.00831402 0.00651761 0.0164148 202.939 0.022592 0.020711 0.00745883
+0.0291383 0.0318749 0.0298921 0.0727971 0.0250722 0.108285 0.0404553 0.0383854 0.0331447 0.0422655
+0.0670287 0.0335833 137.032 0.0188381 92.1891 50.448 0.00715286 0.00574187 0.00421109 0.00717763
+57.3837 0.0100528 0.00794445 0.0167813 0.0241142 0.00712482 0.00776203 0.00842346 0.00368571 71.0022
+34.1967 27.5398 29.8559 78.1617 93.2013 38.2368 145.186 1007.51 213.708 77.1858
+0.000121487 0.000469482 0.00151457 0.00378848 0.00272107 0.000540776 0.000814223 0.00204986 0.00116821 0.00126685
+0.00206275 0.00354008 0.00384599 0.00382851 0.010782 0.0132363 134.728 0.0212045 0.0214968 0.0489361
+260.557 254.399 0.0583716 0.0232568 0.0098425 0.0180486 0.0109929 0.0349526 0.0147891 0.0587508
+277.391 0.0324955 113.254 87.903 101.489 40.2024 0.00804823 0.00459141 0.00732414 0.00840503
+0.00451274 0.00665413 0.0110658 0.00948165 0.0118934 0.00500192 0.00487413 32.9316 107.244 41.1516
+27.3781 29.302 72.294 94.0221 68.1642 78.0504 141.762 421.521 174.664 63.567
+0.000127431 0.000726894 0.00133642 0.00326275 0.00235945 0.00121167 0.000712369 0.00108687 0.00191133 0.00353148
+0.00322386 0.00441305 0.00146919 0.00234161 0.00955473 0.0255067 0.0138837 0.00973005 0.0154551 0.040874
+135.606 271.687 0.032089 0.026961 0.00999324 0.00761756 0.00480118 0.0112183 0.013903 0.0133592
+0.0204678 0.0121194 129.718 100.859 45.7728 33.7578 0.00443264 0.00730053 0.00386753 0.00595764
+0.00817723 0.00872967 0.0071484 0.00294096 0.00919449 0.00747391 0.0076028 83.484 67.8999 73.9029
+75.1731 38.3802 44.6043 115.274 53.8257 258.783 176.203 152.949 160.376 154.897
+0.000130457 0.000716797 0.00162951 0.00170613 0.00206087 0.000754569 0.000375101 0.000874196 0.00403185 0.00534048
+0.0067193 22.6522 61.2402 0.00437842 0.00253278 0.00453329 0.00502827 0.00293106 0.00765537 0.0132058
+99.5811 0.0272581 0.0132541 0.0164907 0.00807762 0.00669542 0.00932007 0.0101341 0.0112208 0.0207794
+0.0128803 0.00864269 0.011066 42.9891 29.8258 20.6491 42.5562 0.00639732 21.3291 0.00723832
+0.00560282 0.00779382 0.00224061 0.00855682 48.9435 0.00444014 0.00643127 65.0556 82.8108 83.4501
+65.6994 46.8453 23.8596 53.2302 50.6586 130.871 241.535 149.507 188.335 124.513
+0.000180451 0.00166646 0.0034427 0.00200175 0.00234669 0.00146306 0.00191555 0.00255808 0.00459441 0.00285929
+145.712 73.218 56.6625 0.00416427 0.00195886 0.00432466 0.00225685 0.00143146 0.0025009 0.00710609
+0.00583753 0.00949985 0.019121 0.0109099 0.00776727 0.0106924 0.0144004 0.00670301 0.0228584 0.0127667
+0.0145021 0.00475722 0.0133974 42.1917 31.2273 70.7523 37.9866 24.9133 0.00845069 0.00468018
+0.00315718 0.00536039 0.00309789 52.2669 52.8342 55.6674 29.4817 0.00549268 50.526 56.9643
+105.22 43.5387 33.1908 43.4655 79.8834 174.849 276.239 307.335 214.542 220.721
+0.000857008 0.00139964 0.00273593 0.00488463 0.0071621 0.00503912 0.00820414 0.00186808 0.00519339 0.00540203
+44.268 0.0104369 0.0148165 0.00286143 0.0041125 0.0032193 0.0016439 0.00202916 0.00389869 0.00596645
+0.0138122 0.00264872 0.0138037 0.00858941 0.00919876 0.0102267 0.00560531 0.00579608 0.0143493 0.0159199
+76.4133 0.00836459 74.7984 0.00764369 0.00845265 51.3939 38.1591 0.00562383 22.061 0.0061913
+0.0060566 0.00243878 0.00357227 0.0107385 0.00912094 152.534 137.387 55.8324 53.4669 71.3208
+102.692 131.713 28.9937 32.7051 109.436 132.64 253.698 329.871 246.842 395.586
+0.00291955 0.000523936 0.00149566 0.00210118 0.00213233 43.5774 0.00404961 0.00302956 0.00828073 0.00902183
+29.139 0.00543622 0.00883743 0.00369415 0.00322842 0.00278818 0.000974873 0.00399342 0.0024766 0.00195656
+0.00369211 0.00326813 0.00206755 0.00638837 0.0145445 0.0092838 0.0182288 0.0247714 0.0394211 129.108
+0.0231061 68.2527 0.0149821 0.0113204 97.0149 58.3983 31.3419 35.8728 28.6143 22.143
+62.1252 51.0921 0.00644734 0.0063945 57.0285 106.614 319.143 55.9842 77.5035 163.804
+158.044 80.0658 115.826 145.018 136.043 284.149 397.377 595.218 359.652 378.192
+6.45312 0.00171738 0.00151662 0.00229201 0.00490347 0.00818685 0.00557069 0.00725772 26.6882 0.00298389
+0.00525633 0.00473363 45.525 0.00700225 0.00424876 0.00152291 0.000509948 0.0016766 0.00115449 0.00131188
+0.000990897 0.00254474 0.00463009 0.00214849 49.8822 0.00774423 0.0127968 0.0368378 0.0230703 222.447
+214.033 0.0347241 64.6686 97.3467 100.967 28.2165 60.7788 69.2214 0.00593821 0.00315605
+25.8446 0.00550417 110.038 94.8648 215.399 114.105 192.849 80.6502 111.753 346.224
+374.634 168.671 612.519 622.566 833.742 721.002 543.432 476.511 335.208 397.098
+6.19968 0.000788924 0.00305988 0.00390192 25.291 0.00656006 25.3672 50.7738 79.1547 75.3867
+72.4011 21.2843 0.00643961 0.00323694 0.0019178 0.00116462 0.00085523 0.00121455 0.00173189 0.000613408
+0.00122861 0.00136326 0.0035224 0.00203946 81.3156 122.012 71.8206 108.551 149.702 0.0529226
+217.435 277.556 172.487 87.8004 65.9703 39.3048 165.636 0.00995586 35.2641 0.00873079
+61.8381 42.4143 92.3154 92.5884 153.172 370.644 255.549 189.508 203.497 269.513
+786.993 339.609 480.081 1796.59 2925.89 836.871 621.825 636.087 307.044 201.861
+/
+
+PROPS
+DENSITY
+ 835 1000 1 /
+PVCDO
+ 260 1.0 0.0 2.4 0.0 /
+PVTW
+ 260 1.0 0.0 1.0 0.0 /
+ROCK
+ 260 0.0 /
+SWOF
+ 0.000 0.00000000 1.00000000 0
+ 0.005 0.00002500 0.99002500 0
+ 0.010 0.00010000 0.98010000 0
+ 0.015 0.00022500 0.97022500 0
+ 0.020 0.00040000 0.96040000 0
+ 0.025 0.00062500 0.95062500 0
+ 0.030 0.00090000 0.94090000 0
+ 0.035 0.00122500 0.93122500 0
+ 0.040 0.00160000 0.92160000 0
+ 0.045 0.00202500 0.91202500 0
+ 0.050 0.00250000 0.90250000 0
+ 0.055 0.00302500 0.89302500 0
+ 0.060 0.00360000 0.88360000 0
+ 0.065 0.00422500 0.87422500 0
+ 0.070 0.00490000 0.86490000 0
+ 0.075 0.00562500 0.85562500 0
+ 0.080 0.00640000 0.84640000 0
+ 0.085 0.00722500 0.83722500 0
+ 0.090 0.00810000 0.82810000 0
+ 0.095 0.00902500 0.81902500 0
+ 0.100 0.01000000 0.81000000 0
+ 0.105 0.01102500 0.80102500 0
+ 0.110 0.01210000 0.79210000 0
+ 0.115 0.01322500 0.78322500 0
+ 0.120 0.01440000 0.77440000 0
+ 0.125 0.01562500 0.76562500 0
+ 0.130 0.01690000 0.75690000 0
+ 0.135 0.01822500 0.74822500 0
+ 0.140 0.01960000 0.73960000 0
+ 0.145 0.02102500 0.73102500 0
+ 0.150 0.02250000 0.72250000 0
+ 0.155 0.02402500 0.71402500 0
+ 0.160 0.02560000 0.70560000 0
+ 0.165 0.02722500 0.69722500 0
+ 0.170 0.02890000 0.68890000 0
+ 0.175 0.03062500 0.68062500 0
+ 0.180 0.03240000 0.67240000 0
+ 0.185 0.03422500 0.66422500 0
+ 0.190 0.03610000 0.65610000 0
+ 0.195 0.03802500 0.64802500 0
+ 0.200 0.04000000 0.64000000 0
+ 0.205 0.04202500 0.63202500 0
+ 0.210 0.04410000 0.62410000 0
+ 0.215 0.04622500 0.61622500 0
+ 0.220 0.04840000 0.60840000 0
+ 0.225 0.05062500 0.60062500 0
+ 0.230 0.05290000 0.59290000 0
+ 0.235 0.05522500 0.58522500 0
+ 0.240 0.05760000 0.57760000 0
+ 0.245 0.06002500 0.57002500 0
+ 0.250 0.06250000 0.56250000 0
+ 0.255 0.06502500 0.55502500 0
+ 0.260 0.06760000 0.54760000 0
+ 0.265 0.07022500 0.54022500 0
+ 0.270 0.07290000 0.53290000 0
+ 0.275 0.07562500 0.52562500 0
+ 0.280 0.07840000 0.51840000 0
+ 0.285 0.08122500 0.51122500 0
+ 0.290 0.08410000 0.50410000 0
+ 0.295 0.08702500 0.49702500 0
+ 0.300 0.09000000 0.49000000 0
+ 0.305 0.09302500 0.48302500 0
+ 0.310 0.09610000 0.47610000 0
+ 0.315 0.09922500 0.46922500 0
+ 0.320 0.10240000 0.46240000 0
+ 0.325 0.10562500 0.45562500 0
+ 0.330 0.10890000 0.44890000 0
+ 0.335 0.11222500 0.44222500 0
+ 0.340 0.11560000 0.43560000 0
+ 0.345 0.11902500 0.42902500 0
+ 0.350 0.12250000 0.42250000 0
+ 0.355 0.12602500 0.41602500 0
+ 0.360 0.12960000 0.40960000 0
+ 0.365 0.13322500 0.40322500 0
+ 0.370 0.13690000 0.39690000 0
+ 0.375 0.14062500 0.39062500 0
+ 0.380 0.14440000 0.38440000 0
+ 0.385 0.14822500 0.37822500 0
+ 0.390 0.15210000 0.37210000 0
+ 0.395 0.15602500 0.36602500 0
+ 0.400 0.16000000 0.36000000 0
+ 0.405 0.16402500 0.35402500 0
+ 0.410 0.16810000 0.34810000 0
+ 0.415 0.17222500 0.34222500 0
+ 0.420 0.17640000 0.33640000 0
+ 0.425 0.18062500 0.33062500 0
+ 0.430 0.18490000 0.32490000 0
+ 0.435 0.18922500 0.31922500 0
+ 0.440 0.19360000 0.31360000 0
+ 0.445 0.19802500 0.30802500 0
+ 0.450 0.20250000 0.30250000 0
+ 0.455 0.20702500 0.29702500 0
+ 0.460 0.21160000 0.29160000 0
+ 0.465 0.21622500 0.28622500 0
+ 0.470 0.22090000 0.28090000 0
+ 0.475 0.22562500 0.27562500 0
+ 0.480 0.23040000 0.27040000 0
+ 0.485 0.23522500 0.26522500 0
+ 0.490 0.24010000 0.26010000 0
+ 0.495 0.24502500 0.25502500 0
+ 0.500 0.25000000 0.25000000 0
+ 0.505 0.25502500 0.24502500 0
+ 0.510 0.26010000 0.24010000 0
+ 0.515 0.26522500 0.23522500 0
+ 0.520 0.27040000 0.23040000 0
+ 0.525 0.27562500 0.22562500 0
+ 0.530 0.28090000 0.22090000 0
+ 0.535 0.28622500 0.21622500 0
+ 0.540 0.29160000 0.21160000 0
+ 0.545 0.29702500 0.20702500 0
+ 0.550 0.30250000 0.20250000 0
+ 0.555 0.30802500 0.19802500 0
+ 0.560 0.31360000 0.19360000 0
+ 0.565 0.31922500 0.18922500 0
+ 0.570 0.32490000 0.18490000 0
+ 0.575 0.33062500 0.18062500 0
+ 0.580 0.33640000 0.17640000 0
+ 0.585 0.34222500 0.17222500 0
+ 0.590 0.34810000 0.16810000 0
+ 0.595 0.35402500 0.16402500 0
+ 0.600 0.36000000 0.16000000 0
+ 0.605 0.36602500 0.15602500 0
+ 0.610 0.37210000 0.15210000 0
+ 0.615 0.37822500 0.14822500 0
+ 0.620 0.38440000 0.14440000 0
+ 0.625 0.39062500 0.14062500 0
+ 0.630 0.39690000 0.13690000 0
+ 0.635 0.40322500 0.13322500 0
+ 0.640 0.40960000 0.12960000 0
+ 0.645 0.41602500 0.12602500 0
+ 0.650 0.42250000 0.12250000 0
+ 0.655 0.42902500 0.11902500 0
+ 0.660 0.43560000 0.11560000 0
+ 0.665 0.44222500 0.11222500 0
+ 0.670 0.44890000 0.10890000 0
+ 0.675 0.45562500 0.10562500 0
+ 0.680 0.46240000 0.10240000 0
+ 0.685 0.46922500 0.09922500 0
+ 0.690 0.47610000 0.09610000 0
+ 0.695 0.48302500 0.09302500 0
+ 0.700 0.49000000 0.09000000 0
+ 0.705 0.49702500 0.08702500 0
+ 0.710 0.50410000 0.08410000 0
+ 0.715 0.51122500 0.08122500 0
+ 0.720 0.51840000 0.07840000 0
+ 0.725 0.52562500 0.07562500 0
+ 0.730 0.53290000 0.07290000 0
+ 0.735 0.54022500 0.07022500 0
+ 0.740 0.54760000 0.06760000 0
+ 0.745 0.55502500 0.06502500 0
+ 0.750 0.56250000 0.06250000 0
+ 0.755 0.57002500 0.06002500 0
+ 0.760 0.57760000 0.05760000 0
+ 0.765 0.58522500 0.05522500 0
+ 0.770 0.59290000 0.05290000 0
+ 0.775 0.60062500 0.05062500 0
+ 0.780 0.60840000 0.04840000 0
+ 0.785 0.61622500 0.04622500 0
+ 0.790 0.62410000 0.04410000 0
+ 0.795 0.63202500 0.04202500 0
+ 0.800 0.64000000 0.04000000 0
+ 0.805 0.64802500 0.03802500 0
+ 0.810 0.65610000 0.03610000 0
+ 0.815 0.66422500 0.03422500 0
+ 0.820 0.67240000 0.03240000 0
+ 0.825 0.68062500 0.03062500 0
+ 0.830 0.68890000 0.02890000 0
+ 0.835 0.69722500 0.02722500 0
+ 0.840 0.70560000 0.02560000 0
+ 0.845 0.71402500 0.02402500 0
+ 0.850 0.72250000 0.02250000 0
+ 0.855 0.73102500 0.02102500 0
+ 0.860 0.73960000 0.01960000 0
+ 0.865 0.74822500 0.01822500 0
+ 0.870 0.75690000 0.01690000 0
+ 0.875 0.76562500 0.01562500 0
+ 0.880 0.77440000 0.01440000 0
+ 0.885 0.78322500 0.01322500 0
+ 0.890 0.79210000 0.01210000 0
+ 0.895 0.80102500 0.01102500 0
+ 0.900 0.81000000 0.01000000 0
+ 0.905 0.81902500 0.00902500 0
+ 0.910 0.82810000 0.00810000 0
+ 0.915 0.83722500 0.00722500 0
+ 0.920 0.84640000 0.00640000 0
+ 0.925 0.85562500 0.00562500 0
+ 0.930 0.86490000 0.00490000 0
+ 0.935 0.87422500 0.00422500 0
+ 0.940 0.88360000 0.00360000 0
+ 0.945 0.89302500 0.00302500 0
+ 0.950 0.90250000 0.00250000 0
+ 0.955 0.91202500 0.00202500 0
+ 0.960 0.92160000 0.00160000 0
+ 0.965 0.93122500 0.00122500 0
+ 0.970 0.94090000 0.00090000 0
+ 0.975 0.95062500 0.00062500 0
+ 0.980 0.96040000 0.00040000 0
+ 0.985 0.97022500 0.00022500 0
+ 0.990 0.98010000 0.00010000 0
+ 0.995 0.99002500 0.00002500 0
+ 1.000 1.00000000 0.00000000 0
+ /
+
+SOLUTION
+PRESSURE
+ 3000*260 /
+SWAT
+ 3000*0.20 /
+RPTRST
+ 'BASIC=2' 'PRESSURE' 'SWAT' 'SOIL' /
+
+SUMMARY
+FOPT
+FWPT
+FWIT
+FOPR
+FWPR
+FWIR
+FOIP
+FPR
+WOPR
+ /
+WWPR
+ /
+WWIR
+ /
+WOPT
+ /
+WWPT
+ /
+WWIT
+ /
+WBHP
+ /
+WWCT
+ /
+
+SCHEDULE
+RPTSCHED
+ 'WELLS=2' 'SUMMARY=2' /
+WELSPECS
+ 'INJ1' 'GROUP1' 15 13 1005 'WATER' 1* 'STD' 'SHUT' 'NO' /
+ 'INJ2' 'GROUP1' 45 38 1005 'WATER' 1* 'STD' 'SHUT' 'NO' /
+ 'PROD1' 'GROUP1' 45 13 1005 'OIL' 1* 'STD' 'SHUT' 'NO' /
+ 'PROD2' 'GROUP1' 15 38 1005 'OIL' 1* 'STD' 'SHUT' 'NO' /
+/
+
+COMPDAT
+ 'INJ1' 15 13 1 1 'OPEN' 2* 0.20 1* 0 1* 'Z' /
+ 'INJ2' 45 38 1 1 'OPEN' 2* 0.20 1* 0 1* 'Z' /
+ 'PROD1' 45 13 1 1 'OPEN' 2* 0.20 1* 0 1* 'Z' /
+ 'PROD2' 15 38 1 1 'OPEN' 2* 0.20 1* 0 1* 'Z' /
+/
+
+WCONPROD
+ 'PROD1' 'OPEN' 'BHP' 5* 175 /
+ 'PROD2' 'OPEN' 'BHP' 5* 175 /
+/
+
+WCONINJE
+ 'INJ1' 'WATER' 'OPEN' 'BHP' 2* 362.5 /
+ 'INJ2' 'WATER' 'OPEN' 'BHP' 2* 362.5 /
+/
+
+WECON
+ 'PROD1' 2* 0.78 2* 'WELL' 'NO' /
+ 'PROD2' 2* 0.78 2* 'WELL' 'NO' /
+/
+
+TSTEP
+ 20*36.5 /
+
+WELTARG
+ 'INJ1' 'BHP' 362.5 /
+ 'INJ2' 'BHP' 362.5 /
+ 'PROD1' 'BHP' 175 /
+ 'PROD2' 'BHP' 175 /
+/
+
+TSTEP
+ 20*36.5 /
+
+WELTARG
+ 'INJ1' 'BHP' 362.5 /
+ 'INJ2' 'BHP' 362.5 /
+ 'PROD1' 'BHP' 175 /
+ 'PROD2' 'BHP' 175 /
+/
+
+TSTEP
+ 20*36.5 /
+
+WELTARG
+ 'INJ1' 'BHP' 362.5 /
+ 'INJ2' 'BHP' 362.5 /
+ 'PROD1' 'BHP' 175 /
+ 'PROD2' 'BHP' 175 /
+/
+
+TSTEP
+ 20*36.5 /
+
+WELTARG
+ 'INJ1' 'BHP' 362.5 /
+ 'INJ2' 'BHP' 362.5 /
+ 'PROD1' 'BHP' 175 /
+ 'PROD2' 'BHP' 175 /
+/
+
+TSTEP
+ 20*36.5 /
+
+END
+''',
+'prompts/task.txt': r'''Design a development plan for a two-dimensional oil-water reservoir. Use the complete base DATA deck below to choose locations for two water injectors and two oil producers, and five constant bottom-hole pressure (BHP) targets for each well. Submit a complete plan in every round. Maximize field cumulative surface oil production (FOPT) on day 3650, measured in standard cubic meters (sm³). Each round simulates ten years from the same undeveloped state. The well pattern in the base deck is a neutral template that you can replace.
+
+You have five proposal rounds, with one plan per round. Your score is the highest FOPT among your feasible submissions across all five rounds. The FOPT of the fifth proposal is also reported separately. Starting in round 2, the history table lists the 28 decisions, status, and FOPT of each of your previous proposals. Any production history and grid fields supplied in the prompt belong to your immediately preceding round.
+
+Constraints
+
+- The grid has 60 × 50 × 1 cells. I is an integer from 1 to 60 along X. J is an integer from 1 to 50 along Y. Each cell is 32 × 32 m in plan and 10 m thick. All wells are vertical and completed in the single layer.
+- The distance between the centers of any two wells must be at least 250 m. For wells at (I1,J1) and (I2,J2), this distance is 32 × sqrt((I1-I2)² + (J1-J2)²) meters.
+- Each injector BHP must be between 275 and 450 bar, inclusive. Each producer BHP must be between 100 and 250 bar, inclusive. All pressures are absolute. Each target applies for 730 days, giving five periods spanning years 0–2, 2–4, 4–6, 6–8, and 8–10. Case 1A has no per-well rate cap. When a producer first reaches a surface water cut of 0.78 at the end of an accepted substep, it shuts permanently from the next substep onward, including after later changes in target pressure.
+- The DATA deck defines pressure, porosity, permeability, relative permeability, dates, initial conditions, and the other static inputs. PRESSURE is absolute reservoir cell pressure in bar. SOIL and SWAT are fractions from 0 to 1. In a flattened grid array, I varies fastest. In the deck, n*value means n consecutive copies of value.
+
+Return exactly one valid JSON object with keys INJ1, INJ2, PROD1, and PROD2. Give exactly seven numbers for each well in the order [I,J,BHP_1,BHP_2,BHP_3,BHP_4,BHP_5]. The first two numbers must be integers. Give the final five in bar. Omit placeholders, units, comments, explanation, and Markdown fences. Swapping the names of two wells of the same type together with their full pressure schedules represents the same physical plan. Submitting a plan already proposed by your arm consumes a round and is recorded as a duplicate.
+''',
+'protocol.json': r'''{
+  "id": "FOPT5_CASE1A_JUTUL_PSO_1_EN_NAME",
+  "task": "Design a complete two-injector, two-producer pattern and ten-year BHP schedule from the same initial state. Maximize ten-year field cumulative oil production.",
+  "simulator": "JutulDarcy 0.4.1 / Jutul 0.5.9",
+  "horizon_days": 3650,
+  "objective_keyword": "FOPT = sum over accepted steps of surface producer oil rates × step duration",
+  "unit": "SM3",
+  "rounds_per_arm": 5,
+  "primary": "max_valid_FOPT_over_rounds_1_to_5",
+  "secondary": [
+    "round5_FOPT",
+    "best_so_far_each_round",
+    "first_round_FOPT",
+    "valid_proposals",
+    "actual_simulator_calls",
+    "elapsed_seconds"
+  ],
+  "tie_tolerance_sm3": 1.0,
+  "LLM": {
+    "fresh_stateless_request_every_round": true,
+    "tools": false,
+    "token_window": 1000000,
+    "reserved_output_and_overhead_tokens": 8704,
+    "outputs_per_round": 1,
+    "feedback": "all own variables and FOPT to date, latest own complete saved rate series and end-of-year-10 pressure, oil saturation and water saturation"
+  },
+  "invalid_or_duplicate": "An invalid or duplicate proposal consumes one round. Record its status and a missing score without dispatching the simulator.",
+  "failed_or_timed_out_simulation": "A simulation that starts and then fails or times out consumes one round and one simulator call. Retain its logs and missing score.",
+  "starting_point": "Both arms receive the same neutral deck. Each chooses a first proposal with no prior scored observations.",
+  "constraints": {
+    "grid_I": [
+      1,
+      60
+    ],
+    "grid_J": [
+      1,
+      50
+    ],
+    "vertical_layer": 1,
+    "minimum_pairwise_spacing_m": 250,
+    "injector_bhp_bar": [
+      275,
+      450
+    ],
+    "producer_bhp_bar": [
+      100,
+      250
+    ],
+    "control_interval_days": 730,
+    "producer_economic_water_cut": 0.78,
+    "rate_cap": "none (Case 1A)",
+    "economic_control": "First accepted substep with producer surface water cut >= 0.78; permanently shut from the next substep"
+  },
+  "replicate_scope": "One geological realization and one five-round trajectory per arm. Generalization to other reservoirs requires independent replications.",
+  "PSO": {
+    "seed": 20261118,
+    "mode": "asynchronous round-robin; one evaluation per round",
+    "particles": 2,
+    "initial_evaluations": 2,
+    "updates": 3,
+    "inertia": 0.7298,
+    "cognitive": 1.49618,
+    "social": 1.49618,
+    "max_normalized_velocity": 0.25,
+    "initial_velocity_uniform": [
+      -0.1,
+      0.1
+    ],
+    "repair": "reflect unit bounds; nearest feasible grid cell in well order, ties by I then J"
+  }
+}
+''',
+'LICENSE': r'''MIT License
+
+Copyright (c) 2026 FOPT5 contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+''',
+'pso25/__init__.py': r'''"""Five-generation synchronous particle-swarm reservoir planning with JutulDarcy."""
+''',
+'pso25/__main__.py': r'''"""Run or audit synchronous five-particle PSO and compare it with the archived five LLM proposals."""
+import argparse
+from pathlib import Path
+
+from fopt5.design import dump
+from .swarm import PARTICLES, PROTOCOL
+
+
+def main():
+    cli = argparse.ArgumentParser(description=__doc__)
+    commands = cli.add_subparsers(dest="operation", required=True)
+    for name in ("run", "audit", "compare"):
+        command = commands.add_parser(name)
+        command.add_argument("--study", type=Path, default=Path("runs/jutuldarcy_pso25"))
+        if name == "run":
+            command.add_argument("--workers", type=int, choices=range(1, PARTICLES+1), default=PARTICLES)
+            command.add_argument("--seed", type=int, default=PROTOCOL["seed"])
+            command.add_argument("--timeout", type=int, default=900)
+        if name == "compare":
+            command.add_argument("--llm-study", type=Path, default=Path("runs/jutuldarcy_pso"))
+            command.add_argument("--archive", type=Path, help="Write the report and the raw evidence from both arms to this ZIP archive")
+    args = cli.parse_args()
+    study = args.study.resolve()
+    if args.operation == "run":
+        from .run import run
+        run(study, args.workers, args.seed, args.timeout)
+    elif args.operation == "audit":
+        from .audit import audit
+        print(dump(audit(study)["summary"]))
+    else:
+        from .report import compare
+        print(dump(compare(study, args.llm_study.resolve(), args.archive)))
+
+
+if __name__ == "__main__":
+    main()
+''',
+'pso25/swarm.py': r'''"""Synchronous PSO using the shared design encoding, well-spacing repair, and velocity update."""
+import math
+
+import numpy as np
+
+from fopt5.design import ROOT, read_json
+from fopt5.pso import Particle, SHAPE, advance, position_to_plan, realized_position
+
+PROTOCOL = read_json(ROOT / "pso25/protocol.json")
+PARTICLES = PROTOCOL["particles"]
+GENERATIONS = PROTOCOL["generations"]
+
+
+class SynchronousSwarm:
+    def __init__(self, seed):
+        self.rng = np.random.default_rng(seed)
+        self.particles = [
+            Particle(self.rng.random(SHAPE), self.rng.uniform(-0.1, 0.1, SHAPE))
+            for _ in range(PARTICLES)
+        ]
+        self.generation = 0
+        self.awaiting_scores = False
+
+    def propose_generation(self):
+        if self.awaiting_scores or self.generation >= GENERATIONS:
+            raise ValueError("Settle the preceding generation before requesting another one within the generation budget")
+        if self.generation:
+            winner = max(self.particles, key=lambda particle: particle.best_score)
+            if winner.best is None:
+                raise ValueError("No valid particle-swarm observations are available")
+            # All particles in this generation use the same global best frozen at the end of the preceding generation.
+            leader = winner.best.copy()
+            for particle in self.particles:
+                advance(particle, leader, self.rng)
+        plans = []
+        for particle in self.particles:
+            plan = position_to_plan(particle.position)
+            particle.position = realized_position(plan)
+            plans.append(plan)
+        self.generation += 1
+        self.awaiting_scores = True
+        return plans
+
+    def observe(self, scores):
+        if not self.awaiting_scores or len(scores) != PARTICLES:
+            raise ValueError("Report all five scores for the same generation in particle order")
+        if any(s is not None and not math.isfinite(s) for s in scores):
+            raise ValueError("Cumulative oil must be finite or missing")
+        for particle, score in zip(self.particles, scores):
+            if score is not None and score > particle.best_score:
+                particle.best_score = score
+                particle.best = particle.position.copy()
+        self.awaiting_scores = False
+''',
+'pso25/run.py': r'''"""Evaluate a frozen generation in independent Julia workers and report scores after the entire generation settles."""
+from concurrent.futures import ThreadPoolExecutor
+import platform
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+from fopt5.design import ROOT, canonical, digest, dump, read_json, render, write
+from fopt5.engine import Solver, file_sha, require
+from fopt5.experiment import directory, exclusive, score_finished, utc
+from fopt5.settings import solver_settings
+from .swarm import GENERATIONS, PARTICLES, PROTOCOL, SynchronousSwarm
+
+ARM = "pso25"
+COMMON_FILES = (
+    "protocol.json", "inputs/BASE.DATA", "solver/evaluate.jl", "solver/Project.toml",
+    "solver/Manifest.toml", "fopt5/design.py", "fopt5/engine.py", "fopt5/pso.py",
+    "fopt5/experiment.py", "fopt5/settings.py",
+)
+REGISTERED_FILES = (*COMMON_FILES, "pso25/protocol.json", "pso25/swarm.py", "pso25/run.py")
+
+
+def register(study, cfg, seed, workers):
+    signature = {
+        "protocol": PROTOCOL["id"], "seed": seed, "simulator": "JutulDarcy",
+        "threads": cfg["threads"], "runtime_manifest_sha256": file_sha(cfg["project"] / "Manifest.toml"),
+        "julia_exe_sha256": file_sha(cfg["exe"]), "python": sys.version.split()[0],
+        "numpy": np.__version__, "platform": platform.system(),
+        "files": {name: file_sha(ROOT / name) for name in REGISTERED_FILES},
+    }
+    path = study / "study.json"
+    if path.exists():
+        require(read_json(path)["signature"] == signature, "The registered protocol, inputs, or runtime environment have changed")
+    else:
+        require(not (study / ARM).exists() and not (study / "generations").exists(), "Unregistered study material already exists")
+        write(path, dump({"locked_utc": utc(), "initial_parallel_workers": workers, "signature": signature}))
+
+
+def freeze_generation(study, number, plans, previous_scores):
+    path = study / "generations" / f"g{number:02d}.json"
+    frozen = {"generation": number, "previous_generation_scores_sm3": previous_scores, "plans": plans}
+    if path.exists():
+        require(read_json(path)["batch"] == frozen, "The generation of proposals differs from the registered history")
+    else:
+        write(path, dump({"proposed_utc": utc(), "batch": frozen}))
+
+
+def duplicate_flags(plans, seen):
+    flags = []
+    for plan in plans:
+        key = canonical(plan)
+        flags.append(key in seen)
+        seen.add(key)
+    return flags
+
+
+def evaluation_id(generation, particle):
+    return (generation - 1) * PARTICLES + particle
+
+
+def check_record(folder, row, generation, particle, plan, duplicate):
+    index = evaluation_id(generation, particle)
+    require((row["arm"], row["generation"], row["particle_id"], row["evaluation"]) ==
+            (ARM, generation, particle, index), "Evaluation or particle ID mismatch")
+    require(row["plan"] == plan == read_json(folder / "plan.json"), "The recorded plan differs from the registered generation")
+    require((row["status"] == "duplicate") == duplicate, "Duplicate-proposal status mismatch")
+    require(row["simulator_calls"] == int((folder / "launched.txt").exists()), "Solver call count mismatch")
+    if row["status"] == "ok":
+        verification = read_json(folder / "verification.json")
+        require(row["simulator_calls"] == 1 and row["data_sha256"] == file_sha(folder / "MODEL.DATA"),
+                "A completed evaluation has an inconsistent deck or dispatch count")
+        require(verification["simulator"] == "JutulDarcy" and verification["fopt_sm3"] == row["fopt_sm3"]
+                and row["feedback_sha256"] == file_sha(folder / "feedback.txt"), "The score of a completed evaluation is inconsistent")
+    return row
+
+
+def evaluate(study, generation, particle, plan, duplicate, solver):
+    index = evaluation_id(generation, particle)
+    folder = directory(study, ARM, index)
+    result_path = folder / "record.json"
+    if result_path.exists():
+        return check_record(folder, read_json(result_path), generation, particle, plan, duplicate)
+    received = folder / "jutul/complete.toml"
+    launched = folder / "launched.txt"
+    if launched.exists() and not received.is_file():
+        raise RuntimeError(f"Evaluation {index} was already dispatched and has no complete receipt. Inspect the current job before dispatching it again.")
+    plan_path = folder / "plan.json"
+    if plan_path.exists():
+        require(read_json(plan_path) == plan, "Checkpointed particle plan mismatch")
+    else:
+        write(plan_path, dump(plan))
+    row = {"arm": ARM, "generation": generation, "particle_id": particle, "evaluation": index,
+           "simulator": "JutulDarcy", "plan": plan, "simulator_calls": 0}
+    if duplicate:
+        require(not received.exists() and not launched.exists(), "A duplicate proposal has an extra solver record")
+        row["status"] = "duplicate"
+    else:
+        deck = render(plan)
+        row["data_sha256"] = digest(deck.encode("utf-8"))
+        model_path = folder / "MODEL.DATA"
+        if model_path.exists():
+            require(file_sha(model_path) == row["data_sha256"], "The existing DATA deck differs from the registered plan")
+        else:
+            require(not received.exists(), "The solver result has no corresponding input file")
+            write(model_path, deck)
+        start = time.monotonic()
+        try:
+            if not received.is_file():
+                solver.run(folder)
+            require(launched.is_file(), "The completed receipt has no dispatch marker")
+            # Use the LLM arm's scoring function to integrate original substeps and check reservoir oil inventory.
+            score_finished(study, ARM, index, row)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            row.update(status="simulation_or_qc_failed", reason=str(exc))
+        row["simulator_calls"] = int(launched.is_file())
+        row["simulation_and_verification_seconds"] = time.monotonic() - start
+    row["completed_utc"] = utc()
+    write(result_path, dump(row))
+    return row
+
+
+def run(study, workers=PARTICLES, seed=PROTOCOL["seed"], timeout=900):
+    study = Path(study).resolve()
+    require(1 <= workers <= PARTICLES, "The number of parallel workers must be between 1 and 5")
+    cfg = solver_settings()
+    with exclusive(study):
+        register(study, cfg, seed, workers)
+        swarm = SynchronousSwarm(seed)
+        seen = set()
+        previous_scores = []
+        solvers = []
+        for i in range(workers):
+            logdir = study / "workers" / f"w{i+1:02d}"
+            logdir.mkdir(parents=True, exist_ok=True)
+            solvers.append(Solver(cfg, logdir, timeout))
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for gen in range(1, GENERATIONS+1):
+                    plans = swarm.propose_generation()
+                    flags = duplicate_flags(plans, seen)
+                    freeze_generation(study, gen, plans, previous_scores)
+                    # Each worker handles its own files. Fewer workers can evaluate a generation in batches.
+                    def run_lane(lane):
+                        return [evaluate(study, gen, j+1, plans[j], flags[j], solvers[lane])
+                                for j in range(lane, PARTICLES, workers)]
+                    futures = [pool.submit(run_lane, i) for i in range(workers)]
+                    rows = sorted((row for future in futures for row in future.result()),
+                                  key=lambda row: row["particle_id"])
+                    previous_scores = [row.get("fopt_sm3") for row in rows]
+                    swarm.observe(previous_scores)
+                    completed = [score for score in previous_scores if score is not None]
+                    print(f"Generation {gen}/{GENERATIONS} complete, {len(completed)}/{PARTICLES} valid. "
+                          f"Best FOPT this generation: {max(completed, default=None)} sm³", flush=True)
+        finally:
+            for solver in solvers:
+                solver.close()
+''',
+'pso25/audit.py': r'''"""Replay complete generations and independently integrate oil production from raw JutulDarcy substeps."""
+import csv
+import math
+from datetime import datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import tomllib
+
+from fopt5.design import ROOT, read_json, render
+from fopt5.engine import extract, file_sha, require
+from fopt5.experiment import directory
+from .run import ARM, REGISTERED_FILES, check_record, duplicate_flags, evaluation_id
+from .swarm import GENERATIONS, PARTICLES, PROTOCOL, SynchronousSwarm
+
+
+def best_record(rows):
+    valid = [row for row in rows if row["status"] == "ok"]
+    return max(valid, key=lambda row: row["fopt_sm3"], default=None)
+
+
+def audit_raw(folder, row):
+    raw = folder / "jutul"
+    require((folder / "MODEL.DATA").read_bytes() == render(row["plan"]).encode("utf-8"),
+            "The DATA deck cannot be reconstructed from the particle's well locations and BHP schedule")
+    with (raw / "complete.toml").open("rb") as handle:
+        meta = tomllib.load(handle)
+    require(meta["data_sha256"] == row["data_sha256"], "The Julia receipt and DATA hash differ")
+    with TemporaryDirectory() as work:
+        work = Path(work)
+        v = extract(raw, row["plan"], work)
+        require(v == read_json(folder / "verification.json") and v["fopt_sm3"] == row["fopt_sm3"],
+                "The score or verification report recalculated from the raw outputs differs from the archive")
+        for name in ("history.csv", "feedback.txt"):
+            require(file_sha(work / name) == file_sha(folder / name), "Production history or final grid fields could not be reproduced exactly")
+    # Use a separate standard-library sum to integrate both producers over all accepted substeps.
+    with (raw / "steps.csv").open(encoding="utf-8", newline="") as stream:
+        rates = csv.DictReader(stream)
+        oil = math.fsum(-float(step[f"{w}_qo_m3s"]) * float(step["dt_s"])
+                        for step in rates for w in ("PROD1", "PROD2"))
+    require(math.isclose(oil, row["fopt_sm3"], rel_tol=0, abs_tol=1e-6), "Independent integration produced a different FOPT")
+
+
+def audit(study):
+    study = Path(study)
+    registration = read_json(study / "study.json")
+    sig = registration["signature"]
+    require(sig["protocol"] == PROTOCOL["id"] and sig["simulator"] == "JutulDarcy", "Protocol or simulator mismatch")
+    require(set(sig["files"]) == set(REGISTERED_FILES), "Registered file list is incomplete")
+    for name, sha in sig["files"].items():
+        require(file_sha(ROOT / name) == sha, f"Registered input or program changed: {name}")
+    number = PARTICLES * GENERATIONS
+    expected = {f"r{i:02d}" for i in range(1, number + 1)}
+    present = {p.name for p in (study / ARM).glob("r*") if p.is_dir()}
+    require(present == expected, "The study must contain exactly the 25 registered evaluation directories")
+    seen = set()
+    previous_scores = []
+    swarm = SynchronousSwarm(sig["seed"])
+    rows, generations = [], []
+    previous_finished = None
+    for generation in range(1, GENERATIONS + 1):
+        plans = swarm.propose_generation()
+        recorded = read_json(study / "generations" / f"g{generation:02d}.json")
+        frozen_at = datetime.fromisoformat(recorded["proposed_utc"])
+        require(recorded["batch"] == {"generation": generation, "plans": plans,
+                                      "previous_generation_scores_sm3": previous_scores},
+                "The generation cannot be reproduced from its score history")
+        require(previous_finished is None or frozen_at >= previous_finished, "The next generation was registered before the previous one settled")
+        batch = []
+        for particle, (plan, duplicate) in enumerate(zip(plans, duplicate_flags(plans, seen)), 1):
+            folder = directory(study, ARM, evaluation_id(generation, particle))
+            row = read_json(folder / "record.json")
+            check_record(folder, row, generation, particle, plan, duplicate)
+            require(datetime.fromisoformat(row["completed_utc"]) >= frozen_at, "A particle finished before its generation was registered")
+            if row["status"] == "ok":
+                audit_raw(folder, row)
+            batch.append(row)
+        rows.extend(batch)
+        previous_scores = [row.get("fopt_sm3") for row in batch]
+        swarm.observe(previous_scores)
+        previous_finished = max(datetime.fromisoformat(row["completed_utc"]) for row in batch)
+        best = best_record(batch)
+        overall = best_record(rows)
+        generations.append({
+            "generation": generation, "scores_sm3": previous_scores,
+            "calls": sum(row["simulator_calls"] for row in batch),
+            "calls_so_far": sum(row["simulator_calls"] for row in rows),
+            "best_particle": best["particle_id"] if best else None,
+            "generation_best_sm3": best["fopt_sm3"] if best else None,
+            "best_so_far_sm3": overall["fopt_sm3"] if overall else None,
+            "wall_seconds": (previous_finished - frozen_at).total_seconds(),
+        })
+    calls = sum(r["simulator_calls"] for r in rows)
+    require(calls == len(list((study / ARM).rglob("launched.txt"))) <= number, "The number of solver dispatches is inconsistent with the budget")
+    overall = best_record(rows)
+    fields = ("generation", "particle_id", "evaluation", "fopt_sm3", "plan")
+    summary = {"simulator": "JutulDarcy", "generations": GENERATIONS, "particles": PARTICLES,
+               "seed": sig["seed"], "proposals": len(rows), "simulator_calls": calls,
+               "successful": sum(r["status"] == "ok" for r in rows),
+               "best": {k: overall[k] for k in fields} if overall else None}
+    return {"summary": summary, "rows": rows, "generations": generations}
+''',
+'pso25/report.py': r'''"""Compare evaluation budgets on a common reservoir and export particle scores, a report, and auditable raw evidence."""
+import csv
+import io
+import json
+import os
+from pathlib import Path
+import tempfile
+import zipfile
+
+from fopt5.audit import audit as audit_llm
+from fopt5.design import RULES, WELLS, read_json, write
+from fopt5.engine import require
+from fopt5.experiment import history
+from .audit import audit, best_record
+from .run import ARM, COMMON_FILES
+from .swarm import GENERATIONS, PARTICLES
+
+
+def compatible(first, second):
+    for key in ("simulator", "julia_exe_sha256", "runtime_manifest_sha256", "threads"):
+        require(first[key] == second[key], f"The simulation environments differ for {key}")
+    for name in COMMON_FILES:
+        require(first["files"][name] == second["files"][name], f"The physical input or scoring code differs for {name}")
+
+
+def compare_scores(llm_calls, pso_calls, llm_score, pso_score, tolerance):
+    delta = llm_score - pso_score
+    winner = "tie" if abs(delta) <= tolerance else ("llm" if delta > 0 else "pso")
+    return {"llm_calls": llm_calls, "pso_calls": pso_calls, "llm_best_sm3": llm_score,
+            "pso_best_sm3": pso_score, "llm_minus_pso_sm3": delta,
+            "llm_relative_to_pso": delta / pso_score if pso_score else None,
+            "pso_relative_to_llm": -delta / llm_score if llm_score else None, "winner": winner}
+
+
+def save_csv(path, header, rows):
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(header)
+    writer.writerows(rows)
+    write(path, buf.getvalue())
+
+
+def save_tables(study, result):
+    rows = result["rows"]
+    static = ["evaluation", "generation", "particle_id", "status", "simulator_calls", "fopt_sm3"]
+    design = [f"{w}_{key}" for w in WELLS for key in ("I","J","BHP1","BHP2","BHP3","BHP4","BHP5")]
+    save_csv(study / "particles.csv", static + design,
+             ([row.get(k) for k in static] + [v for w in WELLS for v in row["plan"][w]] for row in rows))
+    keys = ["best_particle","generation_best_sm3","best_so_far_sm3","calls","calls_so_far","wall_seconds"]
+    save_csv(study / "generations.csv", ["generation", *(f"particle_{i}_sm3" for i in range(1,PARTICLES+1)), *keys],
+             ([g["generation"], *g["scores_sm3"], *(g[k] for k in keys)] for g in result["generations"]))
+
+
+def format_oil(value):
+    return f"{value:,.2f}" if value is not None else "Missing"
+
+
+def write_report(study, outcome, batch_rows, llm_rows):
+    pso, llm = outcome["pso25"]["best"], outcome["llm5"]
+    full, equal = outcome["full_budget"], outcome["first_generation_budget"]
+    relative = full["llm_relative_to_pso"]
+    percent = f"({relative:+.2%})" if relative is not None else " (percentage unavailable because the reference value is zero)"
+    lines = ["# Ten-year cumulative oil production with 25 PSO evaluations and 5 LLM evaluations", "",
+             "Both arms use the same 3,000-cell reservoir, well spacing and BHP limits, 78% water-cut shut-in rule, and JutulDarcy 0.4.1."
+             " Each plan starts from the same initial state and runs for 3,650 days. The score is the highest field cumulative surface oil production within each arm's budget.", "",
+             "| Method and budget | Simulator calls | Best FOPT (sm³) | Best found in |",
+             "|---|---:|---:|---|",
+             f'| LLM (five rounds) | {full["llm_calls"]} | {format_oil(llm["best_fopt_sm3"])} | Round {llm["best_round"]} |',
+             f'| Synchronous PSO (initial swarm) | {equal["pso_calls"]} | {format_oil(equal["pso_best_sm3"])} | Generation 1 |',
+             f'| Synchronous PSO (five generations) | {full["pso_calls"]} | {format_oil(pso["fopt_sm3"])} | Generation {pso["generation"]}, particle {pso["particle_id"]} |',
+             "", f'The best LLM plan minus the best PSO plan is {full["llm_minus_pso_sm3"]:+,.2f} sm³'
+                 f'{percent}. The percentage uses the five-generation PSO best as its denominator. The tie tolerance is 1 sm³.', "",
+             "## Results by generation", "",
+             "| Generation | Particle 1 | Particle 2 | Particle 3 | Particle 4 | Particle 5 | Generation best | Best so far |",
+             "|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for g in batch_rows:
+        values = [*g["scores_sm3"], g["generation_best_sm3"], g["best_so_far_sm3"]]
+        lines.append("| " + " | ".join([str(g["generation"]), *map(format_oil,values)]) + " |")
+    lines.extend(["", "All table entries are in sm³. Generation 1 evaluates the initial swarm. Generations 2 through 5 update and evaluate all five particles."
+                  f' The random seed is {outcome["pso25"]["seed"]}. Each generation registers all five plans before any production result is available.'
+                  " The global best is updated after the whole generation settles. Both scoring and auditing use rates from the original accepted substeps.",
+                  "", "## Best plan from each arm", "",
+                  "| Method | Well | I | J | Period 1 (bar) | Period 2 (bar) | Period 3 (bar) | Period 4 (bar) | Period 5 (bar) |",
+                  "|---|---|---:|---:|---:|---:|---:|---:|---:|"])
+    for name, plan in (("Synchronous PSO",pso["plan"]),("LLM",llm["plan"])):
+        for w in WELLS:
+            lines.append("| " + " | ".join([name,w,*map(str,plan[w])]) + " |")
+    lines.extend(["","Each of the five absolute BHP targets applies for 730 days. The LLM arm reuses five archived evaluations. All additional solves in the extended experiment belong to synchronous PSO."
+                  " PSO updates use cumulative oil from its own previous generations. The LLM also receives production history and final grid fields from its preceding round."
+                  " The comparison covers one geological realization and one fixed-seed run.",
+                  "", "FOPT by LLM round (sm³), in submission order:  " +
+                  ", ".join(format_oil(r.get("fopt_sm3")) for r in llm_rows) + ".",
+                  "",f'[Best PSO DATA deck](pso25/r{pso["evaluation"]:02d}/MODEL.DATA) · '
+                      '[All 25 plans and scores](particles.csv) · [Generation statistics](generations.csv) · [Score data](comparison.json)'])
+    write(study / "comparison-report.md", "\n".join(lines)+"\n")
+
+
+def archive_results(study, reference, destination):
+    destination = Path(destination).resolve()
+    require(destination.suffix.lower() == ".zip", "The results archive must have a .zip extension")
+    sources = []
+    def add(base, prefix, paths):
+        for item in paths:
+            p = base / item
+            if p.is_file():
+                sources.append((p, prefix + "/" + item))
+    pso_root, llm_root = "runs/jutuldarcy_pso25", "runs/jutuldarcy_pso"
+    add(study,pso_root,["study.json","particles.csv","generations.csv","comparison.json","audit_pso25.json","comparison-report.md"])
+    add(study,pso_root,[f"generations/g{i:02d}.json" for i in range(1,GENERATIONS+1)])
+    add(reference,llm_root,["study.json","llm/model.json","audit_llm.json"])
+    julia = ["MODEL.DATA","record.json","verification.json","launched.txt","history.csv","feedback.txt",
+             "jutul/initial.csv","jutul/final.csv","jutul/steps.csv","jutul/complete.toml","jutul/error.txt"]
+    llm_extras = ["prepared.json","prompt.txt","response.json.txt","model_intent.json","model_error.json"]
+    for base,prefix,arm,n,extras in ((study,pso_root,ARM,GENERATIONS*PARTICLES,["plan.json"]),
+                                    (reference,llm_root,"llm",5,llm_extras)):
+        for i in range(1,n+1):
+            add(base,prefix,[f"{arm}/r{i:02d}/{name}" for name in julia+extras])
+    destination.parent.mkdir(exist_ok=True,parents=True)
+    with tempfile.NamedTemporaryFile(dir=destination.parent,delete=False) as tmp:
+        tmp_path=Path(tmp.name)
+    try:
+        with zipfile.ZipFile(tmp_path,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
+            for src,name in sources:
+                archive.write(src,name)
+        with zipfile.ZipFile(tmp_path) as archive:
+            require(archive.testzip() is None,"The results archive failed its integrity check")
+        os.replace(tmp_path,destination)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def compare(study, llm_study, archive=None):
+    pso = audit(study)
+    checked = audit_llm(llm_study,"llm")
+    llm_rows = history(llm_study,"llm")
+    require(len(llm_rows)==5, "The LLM arm must contain five settled rounds")
+    compatible(read_json(study/"study.json")["signature"], read_json(llm_study/"study.json")["signature"])
+    llm_best = best_record(llm_rows)
+    first = pso["generations"][0]
+    require(llm_best is not None and first["generation_best_sm3"] is not None, "No valid scores are available for comparison")
+    tolerance = read_json(RULES)["tie_tolerance_sm3"]
+    calls = sum(r["simulator_calls"] for r in llm_rows)
+    full = compare_scores(calls,pso["summary"]["simulator_calls"],llm_best["fopt_sm3"],pso["summary"]["best"]["fopt_sm3"],tolerance)
+    equal = compare_scores(calls,first["calls"],llm_best["fopt_sm3"],first["generation_best_sm3"],tolerance)
+    complete = all(r["status"] in ("ok","invalid","duplicate") for r in llm_rows+pso["rows"])
+    if not complete:
+        full["winner"] = None
+    if any(r["status"] not in ("ok","invalid","duplicate") for r in llm_rows+pso["rows"][:PARTICLES]):
+        equal["winner"] = None
+    outcome = {"status":"complete" if complete else "incomplete_infrastructure_or_qc",
+               "pso25":pso["summary"], "llm5":{"rounds":5,"simulator_calls":calls,"successful":checked["verified"],
+               "best_round":llm_best["round"],"best_fopt_sm3":llm_best["fopt_sm3"],"plan":llm_best["plan"]},
+               "first_generation_budget":equal,"full_budget":full,"tie_tolerance_sm3":tolerance}
+    save_tables(study,pso)
+    write(study/"audit_pso25.json",json.dumps(pso["summary"],ensure_ascii=False,indent=2)+"\n")
+    write(study/"comparison.json",json.dumps(outcome,ensure_ascii=False,indent=2)+"\n")
+    write_report(study,outcome,pso["generations"],llm_rows)
+    if archive is not None:
+        archive_results(study,llm_study,archive)
+    return outcome
+''',
+'pso25/protocol.json': r'''{
+  "id": "FOPT_CASE1A_SYNC_PSO_5X5_V1_EN_NAME",
+  "shared_physics": "../protocol.json",
+  "seed": 20261118,
+  "particles": 5,
+  "generations": 5,
+  "max_simulator_calls": 25,
+  "initial_generation": 1,
+  "updates_after_initialization": 4,
+  "feedback": "Freeze all five plans before evaluating a generation. Update personal and global bests in particle order after all five scores settle.",
+  "objective": "Maximize field cumulative surface oil production (FOPT, sm³) at day 3650 over all valid proposals.",
+  "starting_information": "Initialize a random swarm and simulate each proposal from the original reservoir state. The optimizer uses only its own FOPT observations from completed generations.",
+  "duplicate_or_failure": "A duplicate consumes a proposal slot. A dispatched simulation that fails counts against the simulation budget and receives a missing score.",
+  "comparison": "Compare the best PSO score to the best of five archived LLM evaluations. Also report the equal-budget comparison using the five initial particles."
+}
+''',
+}
+CRLF = []
+
+def unpack(target):
+    for name, source in FILES.items():
+        path = target / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if name in CRLF:
+            source = source.replace("\n", "\r\n")
+        path.write_bytes(source.encode("utf-8"))
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "unpack":
+        if len(sys.argv) != 3:
+            raise SystemExit("Usage: unpack NEW_DIRECTORY")
+        destination = Path(sys.argv[2]).resolve()
+        if destination.exists() and any(destination.iterdir()):
+            raise SystemExit("The destination directory must be empty")
+        unpack(destination)
+        print(destination)
+        return
+    # Extract the code to a temporary directory. Keep study results at the requested location.
+    with tempfile.TemporaryDirectory(prefix="fopt5-src-") as directory:
+        unpack(Path(directory))
+        adjacent = Path(__file__).resolve().parent / "model.json"
+        if adjacent.is_file():
+            (Path(directory) / "model.json").write_bytes(adjacent.read_bytes())
+        sys.path.insert(0, directory)
+        if len(sys.argv)>1 and sys.argv[1]=="pso25":
+            del sys.argv[1]
+            from pso25.__main__ import main as run
+        else:
+            from fopt5.__main__ import main as run
+        run()
+
+
+if __name__ == "__main__":
+    main()

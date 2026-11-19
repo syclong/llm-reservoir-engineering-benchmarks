@@ -1,0 +1,71 @@
+{
+  "id": "FOPT5_CASE1A_JUTUL_PSO_1_EN_NAME",
+  "task": "Design a complete two-injector, two-producer pattern and ten-year BHP schedule from the same initial state. Maximize ten-year field cumulative oil production.",
+  "simulator": "JutulDarcy 0.4.1 / Jutul 0.5.9",
+  "horizon_days": 3650,
+  "objective_keyword": "FOPT = sum over accepted steps of surface producer oil rates × step duration",
+  "unit": "SM3",
+  "rounds_per_arm": 5,
+  "primary": "max_valid_FOPT_over_rounds_1_to_5",
+  "secondary": [
+    "round5_FOPT",
+    "best_so_far_each_round",
+    "first_round_FOPT",
+    "valid_proposals",
+    "actual_simulator_calls",
+    "elapsed_seconds"
+  ],
+  "tie_tolerance_sm3": 1.0,
+  "LLM": {
+    "fresh_stateless_request_every_round": true,
+    "tools": false,
+    "token_window": 1000000,
+    "reserved_output_and_overhead_tokens": 8704,
+    "outputs_per_round": 1,
+    "feedback": "all own variables and FOPT to date, latest own complete saved rate series and end-of-year-10 pressure, oil saturation and water saturation"
+  },
+  "invalid_or_duplicate": "An invalid or duplicate proposal consumes one round. Record its status and a missing score without dispatching the simulator.",
+  "failed_or_timed_out_simulation": "A simulation that starts and then fails or times out consumes one round and one simulator call. Retain its logs and missing score.",
+  "starting_point": "Both arms receive the same neutral deck. Each chooses a first proposal with no prior scored observations.",
+  "constraints": {
+    "grid_I": [
+      1,
+      60
+    ],
+    "grid_J": [
+      1,
+      50
+    ],
+    "vertical_layer": 1,
+    "minimum_pairwise_spacing_m": 250,
+    "injector_bhp_bar": [
+      275,
+      450
+    ],
+    "producer_bhp_bar": [
+      100,
+      250
+    ],
+    "control_interval_days": 730,
+    "producer_economic_water_cut": 0.78,
+    "rate_cap": "none (Case 1A)",
+    "economic_control": "First accepted substep with producer surface water cut >= 0.78; permanently shut from the next substep"
+  },
+  "replicate_scope": "One geological realization and one five-round trajectory per arm. Generalization to other reservoirs requires independent replications.",
+  "PSO": {
+    "seed": 20261118,
+    "mode": "asynchronous round-robin; one evaluation per round",
+    "particles": 2,
+    "initial_evaluations": 2,
+    "updates": 3,
+    "inertia": 0.7298,
+    "cognitive": 1.49618,
+    "social": 1.49618,
+    "max_normalized_velocity": 0.25,
+    "initial_velocity_uniform": [
+      -0.1,
+      0.1
+    ],
+    "repair": "reflect unit bounds; nearest feasible grid cell in well order, ties by I then J"
+  }
+}

@@ -1,0 +1,11 @@
+# Data and software
+
+The static rock properties come from the revised SPE 10th Comparative Solution Project, Model 2 dataset associated with Christie and Blunt. The source archive `por_perm_case2a.zip` contains `spe_perm.dat` and `spe_phi.dat`. Its SHA-256 is `12293c23688069c9600d3498c2ca62c59437daf8dbf4c61efec4a0538cb772e0`. The study cross-checked the source against the SINTEF/MRST dataset description. [SPE dataset description](https://www.spe.org/web/csp/datasets/set02.htm) · [Revised SPE archive](https://www.spe.org/web/csp/datasets/por_perm_case2a.zip) · [MRST datasets](https://www.sintef.no/projectweb/mrst/modules/mrst-core/data-sets/)
+
+The deck contains the block I=1–60, J=1–50, K=3 from the source model, using one-based indexing with I varying fastest. The experimental model uses its own local 60 × 50 × 1 horizontal grid with 32 × 32 × 10 m cells. Porosity is a fraction and permeability is in mD. The selected block matches the porosity and horizontal log-permeability patterns in Figure 1 of the study below. Its Experiment 1A informed the placement and control constraints.
+
+Humphries, T. D., Haynes, R. D., & James, L. A. (2014). Simultaneous and sequential approaches to joint optimization of well placement and control. *Computational Geosciences*, 18, 433–448. [Publisher DOI](https://doi.org/10.1007/s10596-013-9375-x)
+
+The deck and evaluator use a closed horizontal reservoir, initial pressure 260 bar, and initial oil/water saturations of 0.8/0.2. Oil/water viscosities are 2.4/1 cP and densities are 835/1000 kg/m³. The model uses unit formation volume factors, zero compressibility, zero capillary pressure, quadratic relative permeability curves, 0.20 m well diameter, zero skin, and an economic producer water-cut limit. The objective is cumulative surface oil on day 3650. The base well pattern is a replaceable template. [Executable DATA deck](../inputs/BASE.DATA)
+
+The Julia manifest locks the simulator dependencies. Credit the dataset and study authors and record the simulator version, spatial subset, and substep-based shut-in rule when reporting results. The repository's MIT license covers the original code, prompt text, and documentation. Upstream data and software retain their respective terms. [JutulDarcy](https://github.com/sintefmath/JutulDarcy.jl) · [License](../LICENSE)

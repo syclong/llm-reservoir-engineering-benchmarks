@@ -1,0 +1,15 @@
+{
+  "id": "FOPT_CASE1A_SYNC_PSO_5X5_V1_EN_NAME",
+  "shared_physics": "../protocol.json",
+  "seed": 20261118,
+  "particles": 5,
+  "generations": 5,
+  "max_simulator_calls": 25,
+  "initial_generation": 1,
+  "updates_after_initialization": 4,
+  "feedback": "Freeze all five plans before evaluating a generation. Update personal and global bests in particle order after all five scores settle.",
+  "objective": "Maximize field cumulative surface oil production (FOPT, sm³) at day 3650 over all valid proposals.",
+  "starting_information": "Initialize a random swarm and simulate each proposal from the original reservoir state. The optimizer uses only its own FOPT observations from completed generations.",
+  "duplicate_or_failure": "A duplicate consumes a proposal slot. A dispatched simulation that fails counts against the simulation budget and receives a missing score.",
+  "comparison": "Compare the best PSO score to the best of five archived LLM evaluations. Also report the equal-budget comparison using the five initial particles."
+}
