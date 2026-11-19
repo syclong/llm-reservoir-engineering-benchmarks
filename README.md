@@ -1,4 +1,4 @@
-# LLM Reservoir Benchmarks
+# LLM Reservoir Engineering Benchmarks
 
 This repository contains the first three experiments in a four-experiment study of reservoir interpretation, history matching, and development planning. Each experiment includes its numerical inputs, model prompts, code, and reproduction instructions.
 
@@ -19,6 +19,6 @@ python experiments/01-reservoir-connectivity/reproduce.py verify
 python experiments/02-history-matching/reproduce.py verify
 ~~~
 
-For experiment 03, run the installation, test, and simulation commands from its [experiment directory](experiments/03-development-planning/README.md). The earlier standalone development-planning benchmark is available at [its original commit](https://github.com/syclong/llm-reservoir-planning-benchmark/tree/4ba53b8c602bfbc398a469fe17f5ffec276d7720).
+For experiment 03, run the installation, test, and simulation commands from its [experiment directory](experiments/03-development-planning/README.md). The earlier standalone development-planning benchmark is available at [its original commit](https://github.com/syclong/llm-reservoir-engineering-benchmarks/tree/4ba53b8c602bfbc398a469fe17f5ffec276d7720).
 
 The [MIT license](LICENSE) covers the project's original code, prompts, and documentation. The experiment READMEs identify the numerical data and third-party simulators and their provenance.

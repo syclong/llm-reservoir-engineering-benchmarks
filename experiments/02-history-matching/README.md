@@ -2,7 +2,7 @@
 
 Can a language model improve an existing history match by editing a reservoir's rock properties in one proposal? This experiment uses a seven-producer PUNQ-S3 tutorial case. The model received one English text message and returned one JSON edit set. Python applied the edits to the base DATA deck, and OPM Flow 2026.04 evaluated the candidate from the same initial state.
 
-[Recorded model prompt](https://github.com/syclong/llm-reservoir-planning-benchmark/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/02-history-matching/prompts/single_step.txt) · [Prompt for new runs](prompts/single_step.txt) · [Original JSON reply](results/edits.json) · [Starting DATA](inputs/BASE.DATA) · [Updated DATA](results/CANDIDATE.DATA) · [Offline replay program](reproduce.py)
+[Recorded model prompt](https://github.com/syclong/llm-reservoir-engineering-benchmarks/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/02-history-matching/prompts/single_step.txt) · [Prompt for new runs](prompts/single_step.txt) · [Original JSON reply](results/edits.json) · [Starting DATA](inputs/BASE.DATA) · [Updated DATA](results/CANDIDATE.DATA) · [Offline replay program](reproduce.py)
 
 ## Recorded results
 

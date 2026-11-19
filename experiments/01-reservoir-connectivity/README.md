@@ -10,7 +10,7 @@ The model received the task and the complete numerical deck in one 119,187-byte 
 
 - [Exact text sent to the model](prompts/single_step.txt)
 - [Numerical deck](inputs/CASE.DATA)
-- [Study metadata](protocol/registration.json) · [Registration at the time of the trial](https://github.com/syclong/llm-reservoir-planning-benchmark/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/01-reservoir-connectivity/protocol/registration.json)
+- [Study metadata](protocol/registration.json) · [Registration at the time of the trial](https://github.com/syclong/llm-reservoir-engineering-benchmarks/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/01-reservoir-connectivity/protocol/registration.json)
 - [Transport recovery record](protocol/transport_recovery.json)
 - [Unedited visible reply](results/model_reply.json)
 - [Request and response receipt](results/receipt.json)
@@ -64,7 +64,7 @@ The first complete visible reply was valid JSON. The model correctly identified 
 | Controls and schedule (literal mode labels) | 7 / 10 |
 | Pairs in the layer without reservoir-quality cells | 3 / 3 |
 
-The original registered driver reported 6/7 for grid and structure even though the reply and the frozen JSON reference both give the crest as [10,14]. The driver had passed a Python tuple directly to an exact JSON-array comparison. Scoring the frozen JSON representation corrected that single item. The bundle includes both scores and the publication version of the driver. The connectivity scores are identical under both implementations. [Initial machine score](results/score_registered.json) · [Correction record](protocol/scoring_correction.json) · [Original registered driver](https://github.com/syclong/llm-reservoir-planning-benchmark/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/01-reservoir-connectivity/protocol/reproduce_registered.py)
+The original registered driver reported 6/7 for grid and structure even though the reply and the frozen JSON reference both give the crest as [10,14]. The driver had passed a Python tuple directly to an exact JSON-array comparison. Scoring the frozen JSON representation corrected that single item. The bundle includes both scores and the publication version of the driver. The connectivity scores are identical under both implementations. [Initial machine score](results/score_registered.json) · [Correction record](protocol/scoring_correction.json) · [Original registered driver](https://github.com/syclong/llm-reservoir-engineering-benchmarks/blob/a5a54dbf56cb8e2a62160ac5cf5589eac437a59c/experiments/01-reservoir-connectivity/protocol/reproduce_registered.py)
 
 The control-mode field in the prompt permitted text. All three replies explicitly state ORAT in longer sentences, together with the correct rate target and BHP limit. The registered literal evaluator expects exactly the four-character label. The table keeps those three literal mismatches. Reading the replies establishes that the model correctly identified oil-rate control in each well. [Visible reply](results/model_reply.json) · [Item-by-item scores](results/score.json)
 
