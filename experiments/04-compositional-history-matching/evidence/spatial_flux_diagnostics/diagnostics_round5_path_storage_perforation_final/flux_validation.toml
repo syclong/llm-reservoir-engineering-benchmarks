@@ -1,0 +1,57 @@
+"max_relative_difference" = 4.610167635101467e-05
+"report_steps" = 516
+"wellbore_correction" = "Recompute ConnectionPressureDrop on the saved state with the native update_before_step_well! wellbore correction. The original calculation used the state at the start of an internal step. Allow the resulting small discretization difference and cross-check against the wellhead rate."
+"instantaneous_wellhead_water_check_passed" = true
+"scope_of_use" = "Use derived fluxes for fitting or water-source interpretation only if the comparison passes. Use the native wellhead output for scoring."
+"simulated_days" = 2891.0
+"analysis_type" = "Read-only constitutive calculations and native cross-term reevaluation on saved states. No additional forward simulation or parameter update was performed."
+
+["aggregate_verification"]
+
+["aggregate_verification"."P12"]
+"sum_layer_water_inflow_m3_day" = 92.03749832775517
+"native_wellhead_water_m3_day" = 92.03325544039933
+"absolute_difference_m3_day" = 0.00424288735584355
+"relative_difference" = 4.610167635101467e-05
+"water_from_completion_fluxes_m3_day" = 92.03749832775517
+"sum_layer_water_backflow_m3_day" = 0.0
+
+["aggregate_verification"."P11"]
+"sum_layer_water_inflow_m3_day" = 20.56607580392287
+"native_wellhead_water_m3_day" = 20.565684917041974
+"absolute_difference_m3_day" = 0.0003908868808970567
+"relative_difference" = 1.9006752387475514e-05
+"water_from_completion_fluxes_m3_day" = 20.56607580392287
+"sum_layer_water_backflow_m3_day" = 0.0
+
+["aggregate_verification"."P15"]
+"sum_layer_water_inflow_m3_day" = 831.0237495345518
+"native_wellhead_water_m3_day" = 831.0156802986149
+"absolute_difference_m3_day" = 0.008069235936886798
+"relative_difference" = 9.710088664015607e-06
+"water_from_completion_fluxes_m3_day" = 831.0237495345518
+"sum_layer_water_backflow_m3_day" = 0.0
+
+["aggregate_verification"."P16"]
+"sum_layer_water_inflow_m3_day" = 1317.9104470910556
+"native_wellhead_water_m3_day" = 1317.908532256981
+"absolute_difference_m3_day" = 0.0019148340745687165
+"relative_difference" = 1.452933969013367e-06
+"water_from_completion_fluxes_m3_day" = 1317.9104470910556
+"sum_layer_water_backflow_m3_day" = 0.0
+
+["aggregate_verification"."P14"]
+"sum_layer_water_inflow_m3_day" = 1025.434722978972
+"native_wellhead_water_m3_day" = 1025.4238388759773
+"absolute_difference_m3_day" = 0.010884102994850764
+"relative_difference" = 1.061424806232457e-05
+"water_from_completion_fluxes_m3_day" = 1025.434722978972
+"sum_layer_water_backflow_m3_day" = 0.0
+
+["aggregate_verification"."P13"]
+"sum_layer_water_inflow_m3_day" = 39.74044665542779
+"native_wellhead_water_m3_day" = 39.7396776036704
+"absolute_difference_m3_day" = 0.0007690517573877287
+"relative_difference" = 1.9352239468512904e-05
+"water_from_completion_fluxes_m3_day" = 39.74044665542779
+"sum_layer_water_backflow_m3_day" = 0.0

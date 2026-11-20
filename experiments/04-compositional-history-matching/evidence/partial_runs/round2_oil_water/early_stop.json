@@ -1,0 +1,8 @@
+{
+  "termination_reason": "The model stopped the run. P15 and P16 showed early water during the first 1281 days of round two, and round three improved the common-window fit. Round-two report step 142 (day 1446 to 1465) ran for more than 40 minutes without a new report. Preserve it as an incomplete trial and prioritize completing the baseline and round three. No solver error was reported and the full-period outcome was unknown.",
+  "stop_time": "2026-11-15T16:48:01.867217",
+  "completed_report_steps": 141,
+  "through_day": 1446.0,
+  "full_period_completed": false,
+  "retained": "All saved checkpoints, the day-1281 snapshot and the most recent stable partial response to be extracted"
+}

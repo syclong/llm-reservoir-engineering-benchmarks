@@ -1,0 +1,115 @@
+{
+  "partial_window_only": true,
+  "common_end_day": 1488.0,
+  "history_duration_days": 2891.0,
+  "comparison": {
+    "baseline": {
+      "per_well": {
+        "P11": {
+          "valid_samples": 114,
+          "oil_rmse_m3_day": 5.07461830978471,
+          "water_rmse_m3_day": 5.074615329131355
+        },
+        "P12": {
+          "valid_samples": 105,
+          "oil_rmse_m3_day": 10.073556487609066,
+          "water_rmse_m3_day": 10.07352955669454
+        },
+        "P13": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 0.2145123635985426,
+          "water_rmse_m3_day": 0.2145005595647386
+        },
+        "P14": {
+          "valid_samples": 94,
+          "oil_rmse_m3_day": 437.5447876271044,
+          "water_rmse_m3_day": 437.544777955124
+        },
+        "P15": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 145.02774464683836,
+          "water_rmse_m3_day": 145.02772621012568
+        },
+        "P16": {
+          "valid_samples": 76,
+          "oil_rmse_m3_day": 82.98640424039915,
+          "water_rmse_m3_day": 82.986396277226
+        }
+      },
+      "field_oil_rmse_m3_day": 509.50119815256033,
+      "field_water_rmse_m3_day": 509.50113658589123
+    },
+    "round1_rock_and_composition": {
+      "per_well": {
+        "P11": {
+          "valid_samples": 114,
+          "oil_rmse_m3_day": 5.033673230611798,
+          "water_rmse_m3_day": 5.03366828756065
+        },
+        "P12": {
+          "valid_samples": 105,
+          "oil_rmse_m3_day": 10.073829091720787,
+          "water_rmse_m3_day": 10.073826879243159
+        },
+        "P13": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 0.11473124365084915,
+          "water_rmse_m3_day": 0.11472208658830979
+        },
+        "P14": {
+          "valid_samples": 94,
+          "oil_rmse_m3_day": 333.54865836407004,
+          "water_rmse_m3_day": 333.5486541522218
+        },
+        "P15": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 137.66197623649225,
+          "water_rmse_m3_day": 137.66197573475253
+        },
+        "P16": {
+          "valid_samples": 76,
+          "oil_rmse_m3_day": 81.61366012306354,
+          "water_rmse_m3_day": 81.61366012342228
+        }
+      },
+      "field_oil_rmse_m3_day": 420.64592008503087,
+      "field_water_rmse_m3_day": 420.6459001972005
+    },
+    "round1_permeability_only": {
+      "per_well": {
+        "P11": {
+          "valid_samples": 114,
+          "oil_rmse_m3_day": 5.035226437749189,
+          "water_rmse_m3_day": 5.035221616822179
+        },
+        "P12": {
+          "valid_samples": 105,
+          "oil_rmse_m3_day": 10.075460151207603,
+          "water_rmse_m3_day": 10.075457946326456
+        },
+        "P13": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 0.11328754429347931,
+          "water_rmse_m3_day": 0.11327398385457896
+        },
+        "P14": {
+          "valid_samples": 94,
+          "oil_rmse_m3_day": 369.67276477692997,
+          "water_rmse_m3_day": 369.6727606274332
+        },
+        "P15": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 144.52984453502017,
+          "water_rmse_m3_day": 144.52984274845403
+        },
+        "P16": {
+          "valid_samples": 76,
+          "oil_rmse_m3_day": 81.8264957250964,
+          "water_rmse_m3_day": 81.82649572508264
+        }
+      },
+      "field_oil_rmse_m3_day": 451.9352393537429,
+      "field_water_rmse_m3_day": 451.9352121929888
+    }
+  }
+}

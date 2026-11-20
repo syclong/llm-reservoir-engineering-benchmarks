@@ -1,0 +1,8 @@
+{
+  "termination_reason": "The permeability-only comparison was stopped deliberately to concentrate computation on the full-period oil/water candidates. The solver had not reported an error. Retain partial results as partial.",
+  "stop_time": "2026-11-15T15:18:05.185656",
+  "completed_report_steps": 234,
+  "through_day": 1809.0,
+  "full_period_completed": false,
+  "retained": "Checkpoints and existing read-only snapshots"
+}

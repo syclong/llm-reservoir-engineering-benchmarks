@@ -1,0 +1,107 @@
+{
+  "candidate": "round5_path_storage",
+  "parent_version": "round4_connectivity",
+  "edit_rationale": {
+    "decision_time": "2026-11-15T18:53:07.992295",
+    "objective": "Full-period field and well oil and water rates. No additional terminal weighting; pressure and gas do not rank candidates.",
+    "parent_case": "round4_connectivity: retain all permeability and initial composition values and edit only porosity in the same I12-W to P16 connection region.",
+    "observed_feedback": "For P16 in round four the water-rate RMSE through day 1789 was 180.85 m3/day. The last rate was 240.12 against 461.68 observed; at day 1439 it was 12.91 against 158.39. At day 1281 the rate was 1.46 against 4.97. The earlier excess water has diminished; do not reinstate the uniform bottom-water Kh enhancement.",
+    "spatial_evidence": "diagnostics_round4_1789: Sw along the 11-node static path is approximately [.481,.647,.809,.492,.461,.413,.381,.331,.308,.334,.294]. The water front has advanced toward the producer. A static path is not a tracer streamline and cannot uniquely identify the source of water.",
+    "physical_hypothesis": "Reduce hydrocarbon-bearing pore volume along the existing path with permeability held fixed. Test whether the front arrives earlier and the day 1300 to 1800 water-rate match improves. Nonlinear field-wide responses may affect pressure and other wells. Use a complete forward run to measure the effect; the porosity multiplier alone gives no fitted score.",
+    "edit": {
+      "path": "I12-W__P16",
+      "horizontal_scale_m": 180.0,
+      "vertical_scale_m": 20.0,
+      "truncation_in_scales": 3.0,
+      "central_porosity_multiplier_vs_round4": 0.5,
+      "multiplier_application": "phi_new = phi_round4 * exp(log(0.5) * gaussian_path_weight * eligibility_mask)"
+    },
+    "porosity_eligibility_conditions": "Only active cells with initial Sw < .99 and parent-cell pore volume > 1e-3 m3 are eligible. Pure-water regions and inactive cells retain their values. Written porosity satisfies 0 < phi < 1.",
+    "fixed_conditions": "Retain all permeabilities, initial composition, initial pressure/Sw/temperature, EOS, SCAL, grid, completions, historical well controls, numerical settings and simulator source. The five component fractions remain nonnegative and sum to one in each cell.",
+    "pore_volume_parent_m3": 1378741561.7740881,
+    "pore_volume_after_edit_m3": 1376597783.5967708,
+    "verification_requirements": "Run from t0 for 516 reports over 2891 days. Compare rounds three and four and the formal baseline under the fixed full-period metric. Each run keeps the same fields throughout."
+  },
+  "fields": {
+    "PORO": {
+      "changed_active_grid_cells": 1120,
+      "min": 0.0,
+      "max": 0.3106
+    }
+  },
+  "parallel_execution_note": "Propose candidates using already simulated windows. The baseline and ranked candidates must each complete 2891 days under the same scoring rules.",
+  "fixed_file_checks": [
+    {
+      "file": "ACTNUM.inc",
+      "sha256": "bd3a5d490ded890ad51d7e5db04ddb4ab774487a4cbfb92eddd0b2a692cd7bb1"
+    },
+    {
+      "file": "COMPOSITION.inc",
+      "sha256": "6981a7203e063a3765155064a927218d64dc5eec68d9b5d099d7989c679de796"
+    },
+    {
+      "file": "GRID_COORD.inc",
+      "sha256": "4f8afcfacb42a12d31c1c3c96895376e25072f4111d6dafd6fc99e3f39c38fef"
+    },
+    {
+      "file": "GRID_ZCORN.inc",
+      "sha256": "96441972794a3018fb31062fae826a0e47cfaf173a3db2f673edd28befc1b513"
+    },
+    {
+      "file": "HISTORY.inc",
+      "sha256": "6e06066253ab5bb50e1c601597176bbc7aeb809f3ea2f1a31ca562f7df81e488"
+    },
+    {
+      "file": "PERMX.inc",
+      "sha256": "462342b7375d2236793c727d1a5f787d818ecc468ca39f4824c91182fab995f4"
+    },
+    {
+      "file": "PERMY.inc",
+      "sha256": "65e9f9162bcd399cc4776268d89cd7fcd09afa7ef7d247cd7b9c5ca404249e79"
+    },
+    {
+      "file": "PERMZ.inc",
+      "sha256": "b83ee98204e4c42bc9b14dba14abc7eb9150ed5e218ee62e4bc4a4e23e824f72"
+    },
+    {
+      "file": "PRESSURE.inc",
+      "sha256": "205d3d98ca1913decccb621bbb00fdb916eae52292933f93cb98bd6e1daa749d"
+    },
+    {
+      "file": "PROPS_EOS.inc",
+      "sha256": "03a13763559267cf6fbb091e74447ee0dadf642de40ab77b6af7550dcd4eb5ce"
+    },
+    {
+      "file": "SATNUM.inc",
+      "sha256": "996e0f8ef4ec6171de8153a2fcb5f86261510fb1740cc4d49a6422b300a67a36"
+    },
+    {
+      "file": "SGAS.inc",
+      "sha256": "d03281634303c5747746c50ea0d254811a64ade01856977d2194041cc578a18e"
+    },
+    {
+      "file": "SGOF.inc",
+      "sha256": "4bc08fb28a54a1fe3bb7b2a95d518e2b2c8184664d906e5ab7b577028e89569f"
+    },
+    {
+      "file": "SWAT.inc",
+      "sha256": "2c92b9f707ea41cdab4ea502d5eabbf116ed18cd4ea9b40106993d315858547c"
+    },
+    {
+      "file": "SWOF.inc",
+      "sha256": "8df3d4e638f64c6519fd027c4163ca3784a8c2c7ccc142edfec9f35b6be86ce0"
+    },
+    {
+      "file": "UNISIM-IV-2026_E300.DATA",
+      "sha256": "1caf2eda588b7e55b9a82886e2df034ad55da3ac10f2a1c6ac306d0b90a27208"
+    },
+    {
+      "file": "WELLS.inc",
+      "sha256": "11bf9a74ff95665c7a66c9c7be2f59b8aae4bdac4e238c7338ac3e1eb65fbf4c"
+    },
+    {
+      "file": "ZMF.inc",
+      "sha256": "7db4717057a299f4d82189578288d4de383bbaf131692dbd420e6d02e56d47c2"
+    }
+  ]
+}

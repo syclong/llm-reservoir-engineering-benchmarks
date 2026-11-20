@@ -1,0 +1,124 @@
+{
+  "candidate": "round1_k_only",
+  "parent_version": "baseline_explicit",
+  "edit_rationale": {
+    "decision_time": "2026-11-15T13:52:47.680832",
+    "feedback_window": "diagnostics_baseline_mid: six-well forward responses for the first 1488 days of the original field. The formal baseline continues over all 2891 days.",
+    "available_observations": "The entire original history was available. The evaluation did not use a strict blind or held-out test.",
+    "near_well_horizontal_permeability_central_multiplier": {
+      "P11": 0.35,
+      "P12": 0.5,
+      "P13": 0.4,
+      "P14": 0.4,
+      "P15": 0.32,
+      "P16": 0.35
+    },
+    "near_well_region": "Use a 3D Gaussian region along the original completions, with a 300 m horizontal radius and a 45 m vertical scale. Retain the original values beyond three scales.",
+    "near_well_rationale": "Simulated BHP is too high. Reduce near-well horizontal inflow capacity to produce greater drawdown at the same liquid rate. At low-water-cut P11/P12/P13, also reduce Kz to maintain the local permeability anisotropy.",
+    "bottom_water_path": {
+      "P14": {
+        "kz": 6.0,
+        "poro": 0.7
+      },
+      "P15": {
+        "kz": 2.5,
+        "poro": 0.8
+      },
+      "P16": {
+        "kz": 1.5,
+        "poro": 0.9
+      }
+    },
+    "bottom_water_rationale": "Historical P14 water cut exceeded 1% on day 1101, before the earliest injection on day 1167.4. Test upward migration of initial bottom water. The region follows a static low-resistance path through actual discrete connections; dynamic flow along that path remains a hypothesis.",
+    "bottom_water_region": "Use a smooth region around the actual bottom-water path with a 250 m horizontal scale and 25 m vertical scale. Edit porosity only in active cells initially containing hydrocarbons with pore volume > 1e-3 m3.",
+    "initial_composition": "In active cells initially containing hydrocarbons, increase N2C1 by 0.007 and decrease C6C19 by 0.007, keeping the other components fixed. This tests the common underprediction of the gas-oil ratio.",
+    "pore_volume_original_m3": 1387416950.8872476,
+    "pore_volume_edited_m3": 1383849540.2365494,
+    "full_period_comparison_criteria": "Use the same native simulator and TUNING for every candidate. Compare after all 2891 days; satisfying the liquid-rate constraint does not independently demonstrate a match.",
+    "comparison_definition": "Retain exactly the same permeability edits and use baseline porosity and composition."
+  },
+  "fields": {
+    "PERMX": {
+      "changed_active_grid_cells": 27467,
+      "min": 1.2345e-12,
+      "max": 9120.1
+    },
+    "PERMY": {
+      "changed_active_grid_cells": 27467,
+      "min": 1.2345e-12,
+      "max": 9120.1
+    },
+    "PERMZ": {
+      "changed_active_grid_cells": 20025,
+      "min": 1.2345e-12,
+      "max": 912.01
+    }
+  },
+  "parallel_execution_note": "Propose candidates using already simulated windows. The baseline and ranked candidates must each complete 2891 days under the same scoring rules.",
+  "fixed_file_checks": [
+    {
+      "file": "ACTNUM.inc",
+      "sha256": "bd3a5d490ded890ad51d7e5db04ddb4ab774487a4cbfb92eddd0b2a692cd7bb1"
+    },
+    {
+      "file": "COMPOSITION.inc",
+      "sha256": "6981a7203e063a3765155064a927218d64dc5eec68d9b5d099d7989c679de796"
+    },
+    {
+      "file": "GRID_COORD.inc",
+      "sha256": "4f8afcfacb42a12d31c1c3c96895376e25072f4111d6dafd6fc99e3f39c38fef"
+    },
+    {
+      "file": "GRID_ZCORN.inc",
+      "sha256": "96441972794a3018fb31062fae826a0e47cfaf173a3db2f673edd28befc1b513"
+    },
+    {
+      "file": "HISTORY.inc",
+      "sha256": "6e06066253ab5bb50e1c601597176bbc7aeb809f3ea2f1a31ca562f7df81e488"
+    },
+    {
+      "file": "PORO.inc",
+      "sha256": "b1444a583d680852a5cb05a040621f915594743f918562a67b6d8a252fdcb37e"
+    },
+    {
+      "file": "PRESSURE.inc",
+      "sha256": "205d3d98ca1913decccb621bbb00fdb916eae52292933f93cb98bd6e1daa749d"
+    },
+    {
+      "file": "PROPS_EOS.inc",
+      "sha256": "03a13763559267cf6fbb091e74447ee0dadf642de40ab77b6af7550dcd4eb5ce"
+    },
+    {
+      "file": "SATNUM.inc",
+      "sha256": "996e0f8ef4ec6171de8153a2fcb5f86261510fb1740cc4d49a6422b300a67a36"
+    },
+    {
+      "file": "SGAS.inc",
+      "sha256": "d03281634303c5747746c50ea0d254811a64ade01856977d2194041cc578a18e"
+    },
+    {
+      "file": "SGOF.inc",
+      "sha256": "4bc08fb28a54a1fe3bb7b2a95d518e2b2c8184664d906e5ab7b577028e89569f"
+    },
+    {
+      "file": "SWAT.inc",
+      "sha256": "2c92b9f707ea41cdab4ea502d5eabbf116ed18cd4ea9b40106993d315858547c"
+    },
+    {
+      "file": "SWOF.inc",
+      "sha256": "8df3d4e638f64c6519fd027c4163ca3784a8c2c7ccc142edfec9f35b6be86ce0"
+    },
+    {
+      "file": "UNISIM-IV-2026_E300.DATA",
+      "sha256": "1caf2eda588b7e55b9a82886e2df034ad55da3ac10f2a1c6ac306d0b90a27208"
+    },
+    {
+      "file": "WELLS.inc",
+      "sha256": "11bf9a74ff95665c7a66c9c7be2f59b8aae4bdac4e238c7338ac3e1eb65fbf4c"
+    },
+    {
+      "file": "ZMF.inc",
+      "sha256": "7db4717057a299f4d82189578288d4de383bbaf131692dbd420e6d02e56d47c2"
+    }
+  ]
+}

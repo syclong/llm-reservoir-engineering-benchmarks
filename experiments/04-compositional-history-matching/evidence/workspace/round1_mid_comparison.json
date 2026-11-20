@@ -1,0 +1,173 @@
+{
+  "window": "Diagnostic through day 1209; coverage is partial.",
+  "metrics": {
+    "original_field_baseline": {
+      "P11": {
+        "n": 54,
+        "BHP_RMSE_bar": 28.289554516859578,
+        "mean_bhp_error_bar": 26.475806410643845,
+        "water_cut_rmse_pp": 0.0006569881761552012,
+        "final_simulated_water_cut_pct": 0.0054737218077937095,
+        "final_observed_water_cut_pct": 0.0052669944525623345,
+        "median_gor": 406.53203216466784
+      },
+      "P12": {
+        "n": 46,
+        "BHP_RMSE_bar": 28.192642564547334,
+        "mean_bhp_error_bar": 25.132250548079593,
+        "water_cut_rmse_pp": 0.09587710887656523,
+        "final_simulated_water_cut_pct": 0.004927979574174515,
+        "final_observed_water_cut_pct": 0.004228308855039948,
+        "median_gor": 406.5320321679435
+      },
+      "P13": {
+        "n": 24,
+        "BHP_RMSE_bar": 41.49028174433917,
+        "mean_bhp_error_bar": 39.78495824104356,
+        "water_cut_rmse_pp": 0.003162542636367566,
+        "final_simulated_water_cut_pct": 0.006053580585599808,
+        "final_observed_water_cut_pct": 0.00933465891848398,
+        "median_gor": 406.53203237165576
+      },
+      "P14": {
+        "n": 35,
+        "BHP_RMSE_bar": 78.06697768922835,
+        "mean_bhp_error_bar": 76.48584139043848,
+        "water_cut_rmse_pp": 3.3839235871071494,
+        "final_simulated_water_cut_pct": 0.004660719381986563,
+        "final_observed_water_cut_pct": 5.185409449319614,
+        "median_gor": 406.5320323553383
+      },
+      "P15": {
+        "n": 30,
+        "BHP_RMSE_bar": 31.1891484317089,
+        "mean_bhp_error_bar": 30.162275027759186,
+        "water_cut_rmse_pp": 0.2521666485451382,
+        "final_simulated_water_cut_pct": 0.004796536060764822,
+        "final_observed_water_cut_pct": 0.5213313102955436,
+        "median_gor": 406.53213802168864
+      },
+      "P16": {
+        "n": 17,
+        "BHP_RMSE_bar": 69.95926790602263,
+        "mean_bhp_error_bar": 68.7894644015854,
+        "water_cut_rmse_pp": 0.013693134034624405,
+        "final_simulated_water_cut_pct": 0.004679162725540791,
+        "final_observed_water_cut_pct": 0.016548557316302462,
+        "median_gor": 406.53203216466653
+      }
+    },
+    "round1_full_candidate": {
+      "P11": {
+        "n": 54,
+        "BHP_RMSE_bar": 9.713225501087468,
+        "mean_bhp_error_bar": -2.689621269386205,
+        "water_cut_rmse_pp": 0.0019005970335275696,
+        "final_simulated_water_cut_pct": 0.006538288977200026,
+        "final_observed_water_cut_pct": 0.0052669944525623345,
+        "median_gor": 421.0290091561519
+      },
+      "P12": {
+        "n": 46,
+        "BHP_RMSE_bar": 12.355499701346849,
+        "mean_bhp_error_bar": 6.2761650893414975,
+        "water_cut_rmse_pp": 0.13067449954865884,
+        "final_simulated_water_cut_pct": 0.005556111589612822,
+        "final_observed_water_cut_pct": 0.004228308855039948,
+        "median_gor": 421.02896320289074
+      },
+      "P13": {
+        "n": 24,
+        "BHP_RMSE_bar": 13.537458382557801,
+        "mean_bhp_error_bar": 7.073755464497594,
+        "water_cut_rmse_pp": 0.0014093469755375406,
+        "final_simulated_water_cut_pct": 0.0076184926324953705,
+        "final_observed_water_cut_pct": 0.00933465891848398,
+        "median_gor": 421.02900943662155
+      },
+      "P14": {
+        "n": 35,
+        "BHP_RMSE_bar": 28.381750268648602,
+        "mean_bhp_error_bar": 23.792213406491594,
+        "water_cut_rmse_pp": 2.947042351169101,
+        "final_simulated_water_cut_pct": 1.2763022829804478,
+        "final_observed_water_cut_pct": 5.185409449319614,
+        "median_gor": 421.02900901631034
+      },
+      "P15": {
+        "n": 30,
+        "BHP_RMSE_bar": 13.914873124594184,
+        "mean_bhp_error_bar": -9.915740363308066,
+        "water_cut_rmse_pp": 0.2510853183289223,
+        "final_simulated_water_cut_pct": 0.006196612853491839,
+        "final_observed_water_cut_pct": 0.5213313102955436,
+        "median_gor": 421.02913060465534
+      },
+      "P16": {
+        "n": 17,
+        "BHP_RMSE_bar": 10.940389673459672,
+        "mean_bhp_error_bar": -2.313586271227437,
+        "water_cut_rmse_pp": 0.010342362808734141,
+        "final_simulated_water_cut_pct": 0.021786013920212968,
+        "final_observed_water_cut_pct": 0.016548557316302462,
+        "median_gor": 421.0290090841133
+      }
+    },
+    "permeability_only": {
+      "P11": {
+        "n": 54,
+        "BHP_RMSE_bar": 9.825743678028099,
+        "mean_bhp_error_bar": -3.0019638125730954,
+        "water_cut_rmse_pp": 0.0019476775804916698,
+        "final_simulated_water_cut_pct": 0.006543839724632895,
+        "final_observed_water_cut_pct": 0.0052669944525623345,
+        "median_gor": 406.53203216466795
+      },
+      "P12": {
+        "n": 46,
+        "BHP_RMSE_bar": 12.185439232422537,
+        "mean_bhp_error_bar": 6.062164391299162,
+        "water_cut_rmse_pp": 0.13061969603335863,
+        "final_simulated_water_cut_pct": 0.005560985258042397,
+        "final_observed_water_cut_pct": 0.004228308855039948,
+        "median_gor": 406.5320321660025
+      },
+      "P13": {
+        "n": 24,
+        "BHP_RMSE_bar": 13.432797849985096,
+        "mean_bhp_error_bar": 6.825018374594554,
+        "water_cut_rmse_pp": 0.0013517088195422972,
+        "final_simulated_water_cut_pct": 0.007649172225929946,
+        "final_observed_water_cut_pct": 0.00933465891848398,
+        "median_gor": 406.5320324196097
+      },
+      "P14": {
+        "n": 35,
+        "BHP_RMSE_bar": 29.41125221401845,
+        "mean_bhp_error_bar": 25.07671156181125,
+        "water_cut_rmse_pp": 3.3654362389615313,
+        "final_simulated_water_cut_pct": 0.16431459853051847,
+        "final_observed_water_cut_pct": 5.185409449319614,
+        "median_gor": 406.5320324091986
+      },
+      "P15": {
+        "n": 30,
+        "BHP_RMSE_bar": 14.16895943524223,
+        "mean_bhp_error_bar": -10.180379430032808,
+        "water_cut_rmse_pp": 0.25107576330391684,
+        "final_simulated_water_cut_pct": 0.006196381049499208,
+        "final_observed_water_cut_pct": 0.5213313102955436,
+        "median_gor": 406.5321465150769
+      },
+      "P16": {
+        "n": 17,
+        "BHP_RMSE_bar": 11.092381955239482,
+        "mean_bhp_error_bar": -3.0877346172282167,
+        "water_cut_rmse_pp": 0.010439474391704248,
+        "final_simulated_water_cut_pct": 0.01866490079298669,
+        "final_observed_water_cut_pct": 0.016548557316302462,
+        "median_gor": 406.5320321646665
+      }
+    }
+  }
+}

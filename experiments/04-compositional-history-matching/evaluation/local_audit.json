@@ -1,0 +1,212 @@
+{
+  "evaluation": {
+    "baseline_tuned": {
+      "days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_pct": 37.97760693786819,
+      "field_oil_rmse_m3_d": 2089.434092571088,
+      "field_water_rmse_m3_d": 2089.4340716568163,
+      "p16_water_rmse_m3_d": 1046.449107130411
+    },
+    "round3_timing": {
+      "days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_pct": 20.791395819944206,
+      "field_oil_rmse_m3_d": 941.8141263699036,
+      "field_water_rmse_m3_d": 941.8141197139665,
+      "p16_water_rmse_m3_d": 812.2064827307191
+    },
+    "round4_connectivity": {
+      "days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_pct": 13.914954811608267,
+      "field_oil_rmse_m3_d": 721.0010566561151,
+      "field_water_rmse_m3_d": 721.0010482263472,
+      "p16_water_rmse_m3_d": 634.2304662039811
+    },
+    "round5_path_storage": {
+      "days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_pct": 11.620241690848204,
+      "field_oil_rmse_m3_d": 544.7150131517477,
+      "field_water_rmse_m3_d": 544.7150082888703,
+      "p16_water_rmse_m3_d": 446.0566048982906
+    },
+    "round1_full": {
+      "days": 1912.0,
+      "report_steps": 248,
+      "stop_reason": "The user clarified the field and well oil/water objective. First-round partial feedback already informed subsequent candidates. Reallocate computation to rounds two and three. The full-period outcome is unknown and the first candidate is excluded from the full-period ranking."
+    },
+    "round1_k_only": {
+      "days": 1809.0,
+      "report_steps": 234,
+      "stop_reason": "The permeability-only comparison was stopped deliberately to concentrate computation on the full-period oil/water candidates. The solver had not reported an error. Retain partial results as partial."
+    },
+    "round2_oil_water": {
+      "days": 1446.0,
+      "report_steps": 141,
+      "stop_reason": "The model stopped the run. P15 and P16 showed early water during the first 1281 days of round two, and round three improved the common-window fit. Round-two report step 142 (day 1446 to 1465) ran for more than 40 minutes without a new report. Preserve it as an incomplete trial and prioritize completing the baseline and round three. No solver error was reported and the full-period outcome was unknown."
+    }
+  },
+  "round4_to_round5_verification": {
+    "cellwise_reconstruction": "Passed",
+    "path_node_count": 11,
+    "path_endpoint_ijk": [
+      13,
+      14,
+      211
+    ],
+    "max_abs_reconstructed_field_difference": 5.551115123125783e-17,
+    "number_of_active_cells": 72267,
+    "original_and_adjusted_pore_volume_m3": [
+      1378741561.7740881,
+      1376597783.5967708
+    ],
+    "r4_to_r5_file_differences": [
+      "PORO.inc"
+    ],
+    "PORO": {
+      "parent_sha256": "f54637b8eeba0a6cbec7028179c9a8b5593de23e4c07cc86c2490e4a4a7ae1f6",
+      "candidate_sha256": "e4fde403cb06b8fb3c270ceb096877f33970dab6d5d9ca0fea1cca6059f75afc",
+      "identical": false,
+      "changed_logical_cells_above_1e_minus_14": 1120,
+      "changed_simulator_active_cells": 1120,
+      "changed_cell_multiplier_range_vs_parent": [
+        0.5,
+        0.9923055385124712
+      ]
+    },
+    "day1439_wellhead_response_recorded": {
+      "round4": {
+        "simulated_days": 1439.0,
+        "p16_observed_water_m3_day": 158.391775,
+        "p16_simulated_water_m3_day": 12.9092114405664
+      },
+      "round5": {
+        "simulated_days": 1439.0,
+        "p16_observed_water_m3_day": 158.391775,
+        "p16_simulated_water_m3_day": 27.27860662910592
+      }
+    },
+    "day1439_path_endpoint_sw_recorded": {
+      "I": 13,
+      "J": 14,
+      "K": 211,
+      "depth_m": 5605.593899999999,
+      "round4_sw": 0.1806913755820666,
+      "round5_sw": 0.19065348324360762
+    },
+    "window_results_from_full_period_rates": {
+      "round4": {
+        "day1439_p16_water_m3_d": 12.909211440568091,
+        "window_p16_water_rmse_m3_d": {
+          "1439": 59.72921965259785,
+          "1789": 180.85096332543847,
+          "2119": 230.14484491205002
+        }
+      },
+      "round5": {
+        "day1439_p16_water_m3_d": 27.278606629109586,
+        "window_p16_water_rmse_m3_d": {
+          "1439": 53.10358337996632,
+          "1789": 96.5200738784519,
+          "2119": 128.95569726007906
+        }
+      }
+    },
+    "water_saturation_from_day1439_native_arrays": {
+      "comparison_check": "Node-by-node agreement",
+      "node_count": 11,
+      "nodes": [
+        {
+          "I": 14,
+          "J": 18,
+          "K": 206,
+          "depth_m": 5480.954475,
+          "round4_sw": 0.32646466627511234,
+          "round5_sw": 0.304697755108179
+        },
+        {
+          "I": 14,
+          "J": 17,
+          "K": 206,
+          "depth_m": 5506.240125,
+          "round4_sw": 0.35912503567976795,
+          "round5_sw": 0.33088304702357046
+        },
+        {
+          "I": 14,
+          "J": 16,
+          "K": 206,
+          "depth_m": 5531.2682,
+          "round4_sw": 0.41106039054613175,
+          "round5_sw": 0.34813717534137234
+        },
+        {
+          "I": 14,
+          "J": 16,
+          "K": 207,
+          "depth_m": 5536.2682,
+          "round4_sw": 0.37313145522603075,
+          "round5_sw": 0.32406388973077166
+        },
+        {
+          "I": 14,
+          "J": 16,
+          "K": 208,
+          "depth_m": 5541.2682,
+          "round4_sw": 0.3393025940285811,
+          "round5_sw": 0.3499872285989795
+        },
+        {
+          "I": 13,
+          "J": 16,
+          "K": 208,
+          "depth_m": 5542.118675,
+          "round4_sw": 0.2278972374646235,
+          "round5_sw": 0.3604095322978602
+        },
+        {
+          "I": 13,
+          "J": 15,
+          "K": 208,
+          "depth_m": 5566.113925000001,
+          "round4_sw": 0.18199480971255025,
+          "round5_sw": 0.3416124281006236
+        },
+        {
+          "I": 13,
+          "J": 15,
+          "K": 209,
+          "depth_m": 5571.113925000001,
+          "round4_sw": 0.18083523627944062,
+          "round5_sw": 0.28688967639645213
+        },
+        {
+          "I": 13,
+          "J": 15,
+          "K": 210,
+          "depth_m": 5576.113925000001,
+          "round4_sw": 0.18077161974936581,
+          "round5_sw": 0.23762024630703477
+        },
+        {
+          "I": 13,
+          "J": 15,
+          "K": 211,
+          "depth_m": 5581.113925000001,
+          "round4_sw": 0.18090435471480293,
+          "round5_sw": 0.2306871917299349
+        },
+        {
+          "I": 13,
+          "J": 14,
+          "K": 211,
+          "depth_m": 5605.593899999999,
+          "round4_sw": 0.1806913755820666,
+          "round5_sw": 0.19065348324360762
+        }
+      ]
+    }
+  }
+}

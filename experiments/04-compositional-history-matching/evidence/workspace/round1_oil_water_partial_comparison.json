@@ -1,0 +1,336 @@
+{
+  "partial_window": true,
+  "common_end_day": 1488.0,
+  "results": {
+    "baseline": {
+      "P11": {
+        "sample_count": 114,
+        "oil_rmse": 5.07461830978471,
+        "water_rmse": 5.074615329131355,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6376.131913,
+          6389.8944945956
+        ],
+        "last_water_observed_simulated": [
+          14.20051993,
+          0.43793833439187685
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.22221879814613946,
+          0.006853138533687839
+        ]
+      },
+      "P12": {
+        "sample_count": 105,
+        "oil_rmse": 10.073556487609066,
+        "water_rmse": 10.07352955669454,
+        "last_time": 1479.5,
+        "last_oil_observed_simulated": [
+          4781.445961,
+          4807.270282100236
+        ],
+        "last_water_observed_simulated": [
+          26.10356091,
+          0.27923980975917123
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.5429701928401408,
+          0.005808360548062162
+        ]
+      },
+      "P13": {
+        "sample_count": 86,
+        "oil_rmse": 0.2145123635985426,
+        "water_rmse": 0.2145005595647386,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6151.228261,
+          6151.521523440764
+        ],
+        "last_water_observed_simulated": [
+          0.75522607,
+          0.461963629231937
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.012276139420518677,
+          0.0075091818793544315
+        ]
+      },
+      "P14": {
+        "sample_count": 94,
+        "oil_rmse": 437.5447876271044,
+        "water_rmse": 437.544777955124,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          4506.637042,
+          5367.708398190237
+        ],
+        "last_water_observed_simulated": [
+          862.3614312,
+          1.2900750097617455
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          16.061867692914802,
+          0.024028224559967937
+        ]
+      },
+      "P15": {
+        "sample_count": 86,
+        "oil_rmse": 145.02774464683836,
+        "water_rmse": 145.02772621012568,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6097.204655,
+          6410.169993503791
+        ],
+        "last_water_observed_simulated": [
+          318.7764638,
+          5.811125296205716
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          4.968475715521147,
+          0.09057266828884607
+        ]
+      },
+      "P16": {
+        "sample_count": 76,
+        "oil_rmse": 82.98640424039915,
+        "water_rmse": 82.986396277226,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          4141.193639,
+          4377.52299735218
+        ],
+        "last_water_observed_simulated": [
+          252.4905699,
+          16.161211547815682
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          5.746670855145809,
+          0.3678282457141318
+        ]
+      }
+    },
+    "round1_full": {
+      "P11": {
+        "sample_count": 114,
+        "oil_rmse": 5.033673230611798,
+        "water_rmse": 5.03366828756065,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6376.131913,
+          6389.797889160389
+        ],
+        "last_water_observed_simulated": [
+          14.20051993,
+          0.5345437696083144
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.22221879814613946,
+          0.008364882034207781
+        ]
+      },
+      "P12": {
+        "sample_count": 105,
+        "oil_rmse": 10.073829091720787,
+        "water_rmse": 10.073826879243159,
+        "last_time": 1479.5,
+        "last_oil_observed_simulated": [
+          4781.445961,
+          4807.240845660083
+        ],
+        "last_water_observed_simulated": [
+          26.10356091,
+          0.30867624991260195
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.5429701928401408,
+          0.00642065668810766
+        ]
+      },
+      "P13": {
+        "sample_count": 86,
+        "oil_rmse": 0.11473124365084915,
+        "water_rmse": 0.11472208658830979,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6151.228261,
+          6151.391567733467
+        ],
+        "last_water_observed_simulated": [
+          0.75522607,
+          0.5919193365248674
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.012276139420518677,
+          0.009621601517119499
+        ]
+      },
+      "P14": {
+        "sample_count": 94,
+        "oil_rmse": 333.54865836407004,
+        "water_rmse": 333.5486541522218,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          4506.637042,
+          5169.178143119114
+        ],
+        "last_water_observed_simulated": [
+          862.3614312,
+          199.8203300808768
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          16.061867692914802,
+          3.7217430974939614
+        ]
+      },
+      "P15": {
+        "sample_count": 86,
+        "oil_rmse": 137.66197623649225,
+        "water_rmse": 137.66197573475253,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6097.204655,
+          6370.021463368409
+        ],
+        "last_water_observed_simulated": [
+          318.7764638,
+          45.959655431586235
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          4.968475715521147,
+          0.716330902173575
+        ]
+      },
+      "P16": {
+        "sample_count": 76,
+        "oil_rmse": 81.61366012306354,
+        "water_rmse": 81.61366012342228,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          4141.193639,
+          4374.773303508783
+        ],
+        "last_water_observed_simulated": [
+          252.4905699,
+          18.91090539120384
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          5.746670855145809,
+          0.43041111950871
+        ]
+      }
+    },
+    "round1_k_only": {
+      "P11": {
+        "sample_count": 114,
+        "oil_rmse": 5.035226437749189,
+        "water_rmse": 5.035221616822179,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6376.131913,
+          6389.802803207494
+        ],
+        "last_water_observed_simulated": [
+          14.20051993,
+          0.5296297225016768
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.22221879814613946,
+          0.008287983889107928
+        ]
+      },
+      "P12": {
+        "sample_count": 105,
+        "oil_rmse": 10.075460151207603,
+        "water_rmse": 10.075457946326456,
+        "last_time": 1479.5,
+        "last_oil_observed_simulated": [
+          4781.445961,
+          4807.243778473221
+        ],
+        "last_water_observed_simulated": [
+          26.10356091,
+          0.30574343677137744
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.5429701928401408,
+          0.006359652362975735
+        ]
+      },
+      "P13": {
+        "sample_count": 86,
+        "oil_rmse": 0.11328754429347931,
+        "water_rmse": 0.11327398385457896,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6151.228261,
+          6151.3919738476125
+        ],
+        "last_water_observed_simulated": [
+          0.75522607,
+          0.5915132223823905
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          0.012276139420518677,
+          0.009615000164184616
+        ]
+      },
+      "P14": {
+        "sample_count": 94,
+        "oil_rmse": 369.67276477692997,
+        "water_rmse": 369.6727606274332,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          4506.637042,
+          5198.844655956216
+        ],
+        "last_water_observed_simulated": [
+          862.3614312,
+          170.15381724377374
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          16.061867692914802,
+          3.1691910156636705
+        ]
+      },
+      "P15": {
+        "sample_count": 86,
+        "oil_rmse": 144.52984453502017,
+        "water_rmse": 144.52984274845403,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          6097.204655,
+          6404.993111619069
+        ],
+        "last_water_observed_simulated": [
+          318.7764638,
+          10.988007180926399
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          4.968475715521147,
+          0.17125996753216016
+        ]
+      },
+      "P16": {
+        "sample_count": 76,
+        "oil_rmse": 81.8264957250964,
+        "water_rmse": 81.82649572508264,
+        "last_time": 1488.0,
+        "last_oil_observed_simulated": [
+          4141.193639,
+          4375.241863657119
+        ],
+        "last_water_observed_simulated": [
+          252.4905699,
+          18.442345242876478
+        ],
+        "observed_and_simulated_water_cut_pct": [
+          5.746670855145809,
+          0.41974671747047815
+        ]
+      }
+    }
+  }
+}

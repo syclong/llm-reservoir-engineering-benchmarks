@@ -1,0 +1,114 @@
+{
+  "candidate": "round4_connectivity",
+  "parent_version": "round3_timing",
+  "input_delta": "runs/round-04/inputs/round4_connectivity",
+  "file": {
+    "ACTNUM.inc": {
+      "parent_sha256": "bd3a5d490ded890ad51d7e5db04ddb4ab774487a4cbfb92eddd0b2a692cd7bb1",
+      "candidate_sha256": "bd3a5d490ded890ad51d7e5db04ddb4ab774487a4cbfb92eddd0b2a692cd7bb1",
+      "identical": true
+    },
+    "COMPOSITION.inc": {
+      "parent_sha256": "6981a7203e063a3765155064a927218d64dc5eec68d9b5d099d7989c679de796",
+      "candidate_sha256": "6981a7203e063a3765155064a927218d64dc5eec68d9b5d099d7989c679de796",
+      "identical": true
+    },
+    "GRID_COORD.inc": {
+      "parent_sha256": "4f8afcfacb42a12d31c1c3c96895376e25072f4111d6dafd6fc99e3f39c38fef",
+      "candidate_sha256": "4f8afcfacb42a12d31c1c3c96895376e25072f4111d6dafd6fc99e3f39c38fef",
+      "identical": true
+    },
+    "GRID_ZCORN.inc": {
+      "parent_sha256": "96441972794a3018fb31062fae826a0e47cfaf173a3db2f673edd28befc1b513",
+      "candidate_sha256": "96441972794a3018fb31062fae826a0e47cfaf173a3db2f673edd28befc1b513",
+      "identical": true
+    },
+    "HISTORY.inc": {
+      "parent_sha256": "6e06066253ab5bb50e1c601597176bbc7aeb809f3ea2f1a31ca562f7df81e488",
+      "candidate_sha256": "6e06066253ab5bb50e1c601597176bbc7aeb809f3ea2f1a31ca562f7df81e488",
+      "identical": true
+    },
+    "PERMX.inc": {
+      "parent_sha256": "478221ca44ac5ff51ca8ba2027388f9e6d5cb73f737e7860895db58f102e574c",
+      "candidate_sha256": "462342b7375d2236793c727d1a5f787d818ecc468ca39f4824c91182fab995f4",
+      "identical": false,
+      "changed_logical_cells_above_1e_minus_14": 10919,
+      "changed_simulator_active_cells": 10919
+    },
+    "PERMY.inc": {
+      "parent_sha256": "a3932eb5992322e0bb2b91fb3565ed611de92102b5d4f38b4f624feb909129a1",
+      "candidate_sha256": "65e9f9162bcd399cc4776268d89cd7fcd09afa7ef7d247cd7b9c5ca404249e79",
+      "identical": false,
+      "changed_logical_cells_above_1e_minus_14": 10941,
+      "changed_simulator_active_cells": 10941
+    },
+    "PERMZ.inc": {
+      "parent_sha256": "34dacb636b556758c8159412394edaf872b45e1657c5010700d9b2aeb105e0aa",
+      "candidate_sha256": "b83ee98204e4c42bc9b14dba14abc7eb9150ed5e218ee62e4bc4a4e23e824f72",
+      "identical": false,
+      "changed_logical_cells_above_1e_minus_14": 3395,
+      "changed_simulator_active_cells": 3395
+    },
+    "PORO.inc": {
+      "parent_sha256": "3fc4c6a95a85500f3ad9c5e930e768f1e79fcaf4364c479f95239cb4034b07a3",
+      "candidate_sha256": "f54637b8eeba0a6cbec7028179c9a8b5593de23e4c07cc86c2490e4a4a7ae1f6",
+      "identical": false,
+      "changed_logical_cells_above_1e_minus_14": 3419,
+      "changed_simulator_active_cells": 3419,
+      "changed_cell_multiplier_range_vs_parent": [
+        0.4999999999999999,
+        1.124356545043368
+      ]
+    },
+    "PRESSURE.inc": {
+      "parent_sha256": "205d3d98ca1913decccb621bbb00fdb916eae52292933f93cb98bd6e1daa749d",
+      "candidate_sha256": "205d3d98ca1913decccb621bbb00fdb916eae52292933f93cb98bd6e1daa749d",
+      "identical": true
+    },
+    "PROPS_EOS.inc": {
+      "parent_sha256": "03a13763559267cf6fbb091e74447ee0dadf642de40ab77b6af7550dcd4eb5ce",
+      "candidate_sha256": "03a13763559267cf6fbb091e74447ee0dadf642de40ab77b6af7550dcd4eb5ce",
+      "identical": true
+    },
+    "SATNUM.inc": {
+      "parent_sha256": "996e0f8ef4ec6171de8153a2fcb5f86261510fb1740cc4d49a6422b300a67a36",
+      "candidate_sha256": "996e0f8ef4ec6171de8153a2fcb5f86261510fb1740cc4d49a6422b300a67a36",
+      "identical": true
+    },
+    "SGAS.inc": {
+      "parent_sha256": "d03281634303c5747746c50ea0d254811a64ade01856977d2194041cc578a18e",
+      "candidate_sha256": "d03281634303c5747746c50ea0d254811a64ade01856977d2194041cc578a18e",
+      "identical": true
+    },
+    "SGOF.inc": {
+      "parent_sha256": "4bc08fb28a54a1fe3bb7b2a95d518e2b2c8184664d906e5ab7b577028e89569f",
+      "candidate_sha256": "4bc08fb28a54a1fe3bb7b2a95d518e2b2c8184664d906e5ab7b577028e89569f",
+      "identical": true
+    },
+    "SWAT.inc": {
+      "parent_sha256": "2c92b9f707ea41cdab4ea502d5eabbf116ed18cd4ea9b40106993d315858547c",
+      "candidate_sha256": "2c92b9f707ea41cdab4ea502d5eabbf116ed18cd4ea9b40106993d315858547c",
+      "identical": true
+    },
+    "SWOF.inc": {
+      "parent_sha256": "8df3d4e638f64c6519fd027c4163ca3784a8c2c7ccc142edfec9f35b6be86ce0",
+      "candidate_sha256": "8df3d4e638f64c6519fd027c4163ca3784a8c2c7ccc142edfec9f35b6be86ce0",
+      "identical": true
+    },
+    "UNISIM-IV-2026_E300.DATA": {
+      "parent_sha256": "1caf2eda588b7e55b9a82886e2df034ad55da3ac10f2a1c6ac306d0b90a27208",
+      "candidate_sha256": "1caf2eda588b7e55b9a82886e2df034ad55da3ac10f2a1c6ac306d0b90a27208",
+      "identical": true
+    },
+    "WELLS.inc": {
+      "parent_sha256": "11bf9a74ff95665c7a66c9c7be2f59b8aae4bdac4e238c7338ac3e1eb65fbf4c",
+      "candidate_sha256": "11bf9a74ff95665c7a66c9c7be2f59b8aae4bdac4e238c7338ac3e1eb65fbf4c",
+      "identical": true
+    },
+    "ZMF.inc": {
+      "parent_sha256": "7db4717057a299f4d82189578288d4de383bbaf131692dbd420e6d02e56d47c2",
+      "candidate_sha256": "7db4717057a299f4d82189578288d4de383bbaf131692dbd420e6d02e56d47c2",
+      "identical": true
+    }
+  }
+}

@@ -1,0 +1,361 @@
+{
+  "active_cells": 72267,
+  "discrete_connections": 209255,
+  "zero_transmissibility_connections": 2546,
+  "positive_transmissibility_component_count": 61,
+  "path_notes": "A static minimum-resistance path uses reciprocal transmissibility as its cost. It is a spatial query that omits evolving pressure differences, relative permeability and wellbore mixing. It does not measure a tracer path or breakthrough time.",
+  "well_connection_components": {
+    "I11": {
+      "0": 63
+    },
+    "I11-W": {
+      "0": 63
+    },
+    "I12": {
+      "0": 81
+    },
+    "I12-W": {
+      "0": 81
+    },
+    "I13": {
+      "0": 81
+    },
+    "I13-W": {
+      "0": 81
+    },
+    "I14": {
+      "0": 43
+    },
+    "I14-W": {
+      "0": 43
+    },
+    "I15": {
+      "0": 69,
+      "34": 1
+    },
+    "I15-W": {
+      "0": 69,
+      "34": 1
+    },
+    "I16": {
+      "0": 89
+    },
+    "I16-W": {
+      "0": 89
+    },
+    "I17": {
+      "0": 110
+    },
+    "I17-W": {
+      "0": 110
+    },
+    "P11": {
+      "0": 75
+    },
+    "P12": {
+      "0": 95
+    },
+    "P13": {
+      "0": 69
+    },
+    "P14": {
+      "0": 62
+    },
+    "P15": {
+      "0": 77
+    },
+    "P16": {
+      "0": 47
+    }
+  },
+  "injector_to_producer_relative_resistance_paths": {
+    "initial_bottom_water__P11": {
+      "relative_resistance": 0.19224508370801022,
+      "path_cell_count": 12,
+      "shallowest_depth": 5647.6997,
+      "deepest_depth": 5702.6997
+    },
+    "initial_bottom_water__P12": {
+      "relative_resistance": 0.10163686759105417,
+      "path_cell_count": 5,
+      "shallowest_depth": 5575.74805,
+      "deepest_depth": 5713.608112500001
+    },
+    "initial_bottom_water__P13": {
+      "relative_resistance": 0.15996530962461675,
+      "path_cell_count": 11,
+      "shallowest_depth": 5650.12475,
+      "deepest_depth": 5700.12475
+    },
+    "initial_bottom_water__P14": {
+      "relative_resistance": 0.1693560865510384,
+      "path_cell_count": 9,
+      "shallowest_depth": 5645.868525,
+      "deepest_depth": 5708.892575000001
+    },
+    "initial_bottom_water__P15": {
+      "relative_resistance": 0.12100106645422995,
+      "path_cell_count": 8,
+      "shallowest_depth": 5652.6394,
+      "deepest_depth": 5702.2164250000005
+    },
+    "initial_bottom_water__P16": {
+      "relative_resistance": 0.40155708129431233,
+      "path_cell_count": 7,
+      "shallowest_depth": 5548.569675,
+      "deepest_depth": 5701.366575
+    },
+    "I11-W__P11": {
+      "relative_resistance": 2.0174240754908688,
+      "path_cell_count": 48,
+      "shallowest_depth": 5502.6997,
+      "deepest_depth": 5758.6365375
+    },
+    "I11-W__P12": {
+      "relative_resistance": 2.0596911986981965,
+      "path_cell_count": 68,
+      "shallowest_depth": 5346.596325,
+      "deepest_depth": 5758.6365375
+    },
+    "I11-W__P13": {
+      "relative_resistance": 1.9052693102817493,
+      "path_cell_count": 36,
+      "shallowest_depth": 5480.12475,
+      "deepest_depth": 5758.6365375
+    },
+    "I11-W__P14": {
+      "relative_resistance": 1.2627004559833548,
+      "path_cell_count": 18,
+      "shallowest_depth": 5539.798825,
+      "deepest_depth": 5627.674325000001
+    },
+    "I11-W__P15": {
+      "relative_resistance": 1.5845932559393487,
+      "path_cell_count": 34,
+      "shallowest_depth": 5547.6394,
+      "deepest_depth": 5758.6365375
+    },
+    "I11-W__P16": {
+      "relative_resistance": 2.1635591583173075,
+      "path_cell_count": 35,
+      "shallowest_depth": 5465.3225999999995,
+      "deepest_depth": 5533.181412500001
+    },
+    "I12-W__P11": {
+      "relative_resistance": 0.8339421338925651,
+      "path_cell_count": 24,
+      "shallowest_depth": 5502.6997,
+      "deepest_depth": 5680.954475
+    },
+    "I12-W__P12": {
+      "relative_resistance": 0.5751994512892694,
+      "path_cell_count": 46,
+      "shallowest_depth": 5346.596325,
+      "deepest_depth": 5680.954475
+    },
+    "I12-W__P13": {
+      "relative_resistance": 1.3831658333916075,
+      "path_cell_count": 43,
+      "shallowest_depth": 5503.442725,
+      "deepest_depth": 5680.954475
+    },
+    "I12-W__P14": {
+      "relative_resistance": 2.2756485219710627,
+      "path_cell_count": 40,
+      "shallowest_depth": 5522.83315,
+      "deepest_depth": 5630.868525
+    },
+    "I12-W__P15": {
+      "relative_resistance": 0.8033237086561701,
+      "path_cell_count": 21,
+      "shallowest_depth": 5467.6394,
+      "deepest_depth": 5630.037850000001
+    },
+    "I12-W__P16": {
+      "relative_resistance": 0.7670306223915492,
+      "path_cell_count": 11,
+      "shallowest_depth": 5480.954475,
+      "deepest_depth": 5605.593899999999
+    },
+    "I13-W__P11": {
+      "relative_resistance": 0.7644556625066189,
+      "path_cell_count": 21,
+      "shallowest_depth": 5442.6997,
+      "deepest_depth": 5617.391250000001
+    },
+    "I13-W__P12": {
+      "relative_resistance": 1.3241853246363362,
+      "path_cell_count": 49,
+      "shallowest_depth": 5346.596325,
+      "deepest_depth": 5617.391250000001
+    },
+    "I13-W__P13": {
+      "relative_resistance": 0.6859598499974093,
+      "path_cell_count": 17,
+      "shallowest_depth": 5460.464475,
+      "deepest_depth": 5617.391250000001
+    },
+    "I13-W__P14": {
+      "relative_resistance": 1.3766775112732683,
+      "path_cell_count": 33,
+      "shallowest_depth": 5645.868525,
+      "deepest_depth": 5741.8490249999995
+    },
+    "I13-W__P15": {
+      "relative_resistance": 0.3813812852607554,
+      "path_cell_count": 13,
+      "shallowest_depth": 5516.19825,
+      "deepest_depth": 5617.391250000001
+    },
+    "I13-W__P16": {
+      "relative_resistance": 0.7479248899934242,
+      "path_cell_count": 15,
+      "shallowest_depth": 5489.896375,
+      "deepest_depth": 5531.71205
+    },
+    "I14-W__P11": {
+      "relative_resistance": 1.8849718095854606,
+      "path_cell_count": 18,
+      "shallowest_depth": 5397.6997,
+      "deepest_depth": 5733.868149999999
+    },
+    "I14-W__P12": {
+      "relative_resistance": 2.8272976080613588,
+      "path_cell_count": 51,
+      "shallowest_depth": 5206.176025,
+      "deepest_depth": 5653.271225
+    },
+    "I14-W__P13": {
+      "relative_resistance": 2.222798889294542,
+      "path_cell_count": 29,
+      "shallowest_depth": 5401.498775,
+      "deepest_depth": 5693.271225
+    },
+    "I14-W__P14": {
+      "relative_resistance": 1.9616828424960406,
+      "path_cell_count": 30,
+      "shallowest_depth": 5468.543825,
+      "deepest_depth": 5693.271225
+    },
+    "I14-W__P15": {
+      "relative_resistance": 1.067478715265037,
+      "path_cell_count": 13,
+      "shallowest_depth": 5467.6394,
+      "deepest_depth": 5733.868149999999
+    },
+    "I14-W__P16": {
+      "relative_resistance": 1.0610569169887802,
+      "path_cell_count": 18,
+      "shallowest_depth": 5499.958975,
+      "deepest_depth": 5653.271225
+    },
+    "I15-W__P11": {
+      "relative_resistance": 3.4715542424601025,
+      "path_cell_count": 67,
+      "shallowest_depth": 5282.456775,
+      "deepest_depth": 5713.813125
+    },
+    "I15-W__P12": {
+      "relative_resistance": 4.330808607462066,
+      "path_cell_count": 79,
+      "shallowest_depth": 5206.176025,
+      "deepest_depth": 5713.813125
+    },
+    "I15-W__P13": {
+      "relative_resistance": 2.621132135570686,
+      "path_cell_count": 33,
+      "shallowest_depth": 5405.106425,
+      "deepest_depth": 5713.813125
+    },
+    "I15-W__P14": {
+      "relative_resistance": 0.8700913039176451,
+      "path_cell_count": 14,
+      "shallowest_depth": 5539.798825,
+      "deepest_depth": 5713.813125
+    },
+    "I15-W__P15": {
+      "relative_resistance": 2.8530102364395744,
+      "path_cell_count": 44,
+      "shallowest_depth": 5368.883675000001,
+      "deepest_depth": 5713.813125
+    },
+    "I15-W__P16": {
+      "relative_resistance": 2.5645679163894863,
+      "path_cell_count": 46,
+      "shallowest_depth": 5465.818,
+      "deepest_depth": 5713.813125
+    },
+    "I17-W__P11": {
+      "relative_resistance": 0.8184307119171248,
+      "path_cell_count": 31,
+      "shallowest_depth": 5363.905275,
+      "deepest_depth": 5542.417125
+    },
+    "I17-W__P12": {
+      "relative_resistance": 0.4069017097503508,
+      "path_cell_count": 13,
+      "shallowest_depth": 5549.488275,
+      "deepest_depth": 5707.417125
+    },
+    "I17-W__P13": {
+      "relative_resistance": 1.4612604234005209,
+      "path_cell_count": 55,
+      "shallowest_depth": 5363.905275,
+      "deepest_depth": 5595.12475
+    },
+    "I17-W__P14": {
+      "relative_resistance": 2.4888411462656186,
+      "path_cell_count": 59,
+      "shallowest_depth": 5363.905275,
+      "deepest_depth": 5630.868525
+    },
+    "I17-W__P15": {
+      "relative_resistance": 1.0586634270573672,
+      "path_cell_count": 34,
+      "shallowest_depth": 5363.905275,
+      "deepest_depth": 5542.417125
+    },
+    "I17-W__P16": {
+      "relative_resistance": 2.000777445753335,
+      "path_cell_count": 28,
+      "shallowest_depth": 5326.685775,
+      "deepest_depth": 5573.17935
+    },
+    "I16__P11": {
+      "relative_resistance": 0.7770912792119669,
+      "path_cell_count": 30,
+      "shallowest_depth": 5382.684575,
+      "deepest_depth": 5553.91845
+    },
+    "I16__P12": {
+      "relative_resistance": 0.3781641117167716,
+      "path_cell_count": 14,
+      "shallowest_depth": 5549.488275,
+      "deepest_depth": 5698.91845
+    },
+    "I16__P13": {
+      "relative_resistance": 1.4071442464457224,
+      "path_cell_count": 50,
+      "shallowest_depth": 5416.4924249999995,
+      "deepest_depth": 5595.12475
+    },
+    "I16__P14": {
+      "relative_resistance": 2.4342591319005624,
+      "path_cell_count": 56,
+      "shallowest_depth": 5416.4924249999995,
+      "deepest_depth": 5630.868525
+    },
+    "I16__P15": {
+      "relative_resistance": 1.0173239943522092,
+      "path_cell_count": 33,
+      "shallowest_depth": 5382.684575,
+      "deepest_depth": 5553.91845
+    },
+    "I16__P16": {
+      "relative_resistance": 1.1858385422130182,
+      "path_cell_count": 19,
+      "shallowest_depth": 5334.056675,
+      "deepest_depth": 5510.625975
+    }
+  }
+}

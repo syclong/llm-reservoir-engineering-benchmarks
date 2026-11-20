@@ -1,0 +1,8 @@
+{
+  "termination_reason": "The user clarified the field and well oil/water objective. First-round partial feedback already informed subsequent candidates. Reallocate computation to rounds two and three. The full-period outcome is unknown and the first candidate is excluded from the full-period ranking.",
+  "stop_time": "2026-11-15T15:50:14.981481",
+  "completed_report_steps": 248,
+  "through_day": 1912.0,
+  "full_period_completed": false,
+  "retained": "All saved checkpoints and read-only snapshots"
+}

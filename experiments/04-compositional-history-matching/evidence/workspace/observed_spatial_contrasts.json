@@ -1,0 +1,44 @@
+{
+  "P11": {
+    "first_production_day": 0.0,
+    "first_90_days_median_gor_m3_m3": 429.5523664988028,
+    "first_90_days_median_bhp_bar": 574.1918557,
+    "first_day_water_cut_exceeds_1pct": null,
+    "max_water_cut_pct": 0.4063635065612893
+  },
+  "P12": {
+    "first_production_day": 965.0,
+    "first_90_days_median_gor_m3_m3": 433.5230448525501,
+    "first_90_days_median_bhp_bar": 537.11301025,
+    "first_day_water_cut_exceeds_1pct": 1935.0,
+    "max_water_cut_pct": 1.8264127603651827
+  },
+  "P13": {
+    "first_production_day": 1121.0,
+    "first_90_days_median_gor_m3_m3": 431.4401576259942,
+    "first_90_days_median_bhp_bar": 522.9274414,
+    "first_day_water_cut_exceeds_1pct": null,
+    "max_water_cut_pct": 0.8763909396533431
+  },
+  "P14": {
+    "first_production_day": 1040.6,
+    "first_90_days_median_gor_m3_m3": 427.74238612257744,
+    "first_90_days_median_bhp_bar": 467.5169291,
+    "first_day_water_cut_exceeds_1pct": 1101.0,
+    "max_water_cut_pct": 31.539226412015076
+  },
+  "P15": {
+    "first_production_day": 1080.0,
+    "first_90_days_median_gor_m3_m3": 429.7840491051262,
+    "first_90_days_median_bhp_bar": 538.95329455,
+    "first_day_water_cut_exceeds_1pct": 1240.0,
+    "max_water_cut_pct": 20.81146310963447
+  },
+  "P16": {
+    "first_production_day": 1146.0,
+    "first_90_days_median_gor_m3_m3": 434.39164367739664,
+    "first_90_days_median_bhp_bar": 484.0001394,
+    "first_day_water_cut_exceeds_1pct": 1358.0,
+    "max_water_cut_pct": 52.783522649638414
+  }
+}

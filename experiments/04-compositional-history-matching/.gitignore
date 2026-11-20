@@ -1,0 +1,9 @@
+!runs/
+runs/*
+!runs/index.json
+!runs/round-0[0-5]/
+runs/round-0[0-5]/*
+!runs/round-0[0-5]/README.md
+!runs/round-0[0-5]/trace/
+!runs/round-0[0-5]/inputs/
+!runs/round-0[45]/diagnostics-1439/

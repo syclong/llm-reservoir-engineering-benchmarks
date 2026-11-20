@@ -1,0 +1,109 @@
+{
+  "candidate": "round5_path_storage",
+  "reference_case": "baseline_explicit (original rock properties and original normalized composition)",
+  "active_grid_cell_count": 72267,
+  "cumulative_changed_fields": {
+    "PORO": {
+      "changed_active_cells": 4378,
+      "min_value_active_field": 2.5794e-06,
+      "max_value_active_field": 0.3106,
+      "min_cumulative_multiplier": 0.3499999999999999,
+      "max_cumulative_multiplier": 1.0
+    },
+    "PERMX": {
+      "changed_active_cells": 28013,
+      "min_value_active_field": 2.087433723024801e-09,
+      "max_value_active_field": 15982.1003045685,
+      "min_cumulative_multiplier": 0.320000000000001,
+      "max_cumulative_multiplier": 4.880119097399453
+    },
+    "PERMY": {
+      "changed_active_cells": 28013,
+      "min_value_active_field": 2.437e-09,
+      "max_value_active_field": 17607.56361203679,
+      "min_cumulative_multiplier": 0.320000000000001,
+      "max_cumulative_multiplier": 4.8801190973994535
+    },
+    "PERMZ": {
+      "changed_active_cells": 20757,
+      "min_value_active_field": 5.675679020255733e-10,
+      "max_value_active_field": 942.533791243528,
+      "min_cumulative_multiplier": 0.3499999999999998,
+      "max_cumulative_multiplier": 12.000000000000002
+    }
+  },
+  "fixed_files": [
+    {
+      "file": "ACTNUM.inc",
+      "SHA256": "bd3a5d490ded890ad51d7e5db04ddb4ab774487a4cbfb92eddd0b2a692cd7bb1"
+    },
+    {
+      "file": "COMPOSITION.inc",
+      "SHA256": "6981a7203e063a3765155064a927218d64dc5eec68d9b5d099d7989c679de796"
+    },
+    {
+      "file": "GRID_COORD.inc",
+      "SHA256": "4f8afcfacb42a12d31c1c3c96895376e25072f4111d6dafd6fc99e3f39c38fef"
+    },
+    {
+      "file": "GRID_ZCORN.inc",
+      "SHA256": "96441972794a3018fb31062fae826a0e47cfaf173a3db2f673edd28befc1b513"
+    },
+    {
+      "file": "HISTORY.inc",
+      "SHA256": "6e06066253ab5bb50e1c601597176bbc7aeb809f3ea2f1a31ca562f7df81e488"
+    },
+    {
+      "file": "PRESSURE.inc",
+      "SHA256": "205d3d98ca1913decccb621bbb00fdb916eae52292933f93cb98bd6e1daa749d"
+    },
+    {
+      "file": "PROPS_EOS.inc",
+      "SHA256": "03a13763559267cf6fbb091e74447ee0dadf642de40ab77b6af7550dcd4eb5ce"
+    },
+    {
+      "file": "SATNUM.inc",
+      "SHA256": "996e0f8ef4ec6171de8153a2fcb5f86261510fb1740cc4d49a6422b300a67a36"
+    },
+    {
+      "file": "SGAS.inc",
+      "SHA256": "d03281634303c5747746c50ea0d254811a64ade01856977d2194041cc578a18e"
+    },
+    {
+      "file": "SGOF.inc",
+      "SHA256": "4bc08fb28a54a1fe3bb7b2a95d518e2b2c8184664d906e5ab7b577028e89569f"
+    },
+    {
+      "file": "SWAT.inc",
+      "SHA256": "2c92b9f707ea41cdab4ea502d5eabbf116ed18cd4ea9b40106993d315858547c"
+    },
+    {
+      "file": "SWOF.inc",
+      "SHA256": "8df3d4e638f64c6519fd027c4163ca3784a8c2c7ccc142edfec9f35b6be86ce0"
+    },
+    {
+      "file": "UNISIM-IV-2026_E300.DATA",
+      "SHA256": "1caf2eda588b7e55b9a82886e2df034ad55da3ac10f2a1c6ac306d0b90a27208"
+    },
+    {
+      "file": "WELLS.inc",
+      "SHA256": "11bf9a74ff95665c7a66c9c7be2f59b8aae4bdac4e238c7338ac3e1eb65fbf4c"
+    }
+  ],
+  "initial_composition_constraints": {
+    "min_component_fraction": 0.04710023381159911,
+    "max_cell_composition_sum_deviation": 0.0,
+    "changed_vs_normalized_initial_composition": false
+  },
+  "native_simulator_array_comparison": {
+    "poro_max_absolute_difference": 0.0,
+    "permx_multiplier_max_relative_difference": 4.440892098500626e-16,
+    "permy_multiplier_max_relative_difference": 3.3306690738754696e-16,
+    "permz_multiplier_max_relative_difference": 2.220446049250313e-16,
+    "initial_zmf_max_absolute_difference": 0.0,
+    "initial_pressure_max_abs_diff_vs_baseline": 7.450580596923828e-09,
+    "initial_immiscible_saturation_max_abs_diff_vs_baseline": 2.7755575615628914e-17
+  },
+  "matches_simulated_input_fields": true,
+  "all_constraints_passed": true
+}

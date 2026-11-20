@@ -1,0 +1,47 @@
+{
+  "window": "Two-well diagnostic through day 1040.6; coverage is partial.",
+  "metrics": {
+    "original_field_baseline": {
+      "P11": {
+        "sample_count": 19,
+        "bhp_rmse_bar": 25.617953247072677,
+        "gas_rate_nrmse_pct": 6.871645841335843,
+        "median_simulated_gor": 406.53203216466636
+      },
+      "P12": {
+        "sample_count": 9,
+        "bhp_rmse_bar": 30.707639936602398,
+        "gas_rate_nrmse_pct": 7.216082129457442,
+        "median_simulated_gor": 406.5320321646669
+      }
+    },
+    "round1_full_candidate": {
+      "P11": {
+        "sample_count": 19,
+        "bhp_rmse_bar": 13.104622331274173,
+        "gas_rate_nrmse_pct": 2.8215114537636388,
+        "median_simulated_gor": 421.0290091561937
+      },
+      "P12": {
+        "sample_count": 9,
+        "bhp_rmse_bar": 17.078464199052085,
+        "gas_rate_nrmse_pct": 3.3983231294833223,
+        "median_simulated_gor": 421.0290087466131
+      }
+    },
+    "permeability_only": {
+      "P11": {
+        "sample_count": 19,
+        "bhp_rmse_bar": 13.32687061969995,
+        "gas_rate_nrmse_pct": 6.87342417209634,
+        "median_simulated_gor": 406.5320321646672
+      },
+      "P12": {
+        "sample_count": 9,
+        "bhp_rmse_bar": 16.911124559207916,
+        "gas_rate_nrmse_pct": 7.21793852987571,
+        "median_simulated_gor": 406.53203216466744
+      }
+    }
+  }
+}

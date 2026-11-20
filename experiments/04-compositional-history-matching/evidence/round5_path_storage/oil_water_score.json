@@ -1,0 +1,418 @@
+{
+  "candidate": "round5_path_storage",
+  "objective": "Full-history field and well oil and water production. BHP and gas rate are outside the primary score; terminal observations receive no extra weight.",
+  "total_history_days": 2891.0,
+  "liquid_scales_by_well": {
+    "P11": 5196.693339885,
+    "P12": 4863.17554465,
+    "P13": 4805.11543095,
+    "P14": 4385.18757825,
+    "P15": 5151.925696765,
+    "P16": 4105.701322
+  },
+  "phase_scales_by_well": {
+    "P11": {
+      "oil": 7202.909753099998,
+      "water": 18.335711750499996
+    },
+    "P12": {
+      "oil": 6788.9735652,
+      "water": 74.752415398
+    },
+    "P13": {
+      "oil": 6073.400235499999,
+      "water": 34.6985436
+    },
+    "P14": {
+      "oil": 4999.48811025,
+      "water": 1412.7525495
+    },
+    "P15": {
+      "oil": 6223.633400999999,
+      "water": 883.5821394299998
+    },
+    "P16": {
+      "oil": 4344.997169,
+      "water": 2061.437781
+    }
+  },
+  "full_period": {
+    "per_well": {
+      "P11": {
+        "valid_samples": 460,
+        "oil_rmse_m3_day": 3.7518645957976324,
+        "water_rmse_m3_day": 3.751858867187708,
+        "combined_oil_water_rmse_m3_day": 3.7518617314937637,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.07219709700200995,
+        "oil_nrmse_pct_oil_p95_scale": 0.0520881799773057,
+        "water_nrmse_pct_water_p95_scale": 20.462030153181253,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 14.468887157763588,
+        "water_cut_rmse_percentage_points": 0.06740753463533473,
+        "liquid_control_rmse_m3_day": 4.959712085690031e-05,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P12": {
+        "valid_samples": 449,
+        "oil_rmse_m3_day": 9.479517334523734,
+        "water_rmse_m3_day": 9.479512598784543,
+        "combined_oil_water_rmse_m3_day": 9.479514966654435,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.19492438386442557,
+        "oil_nrmse_pct_oil_p95_scale": 0.13963108330713428,
+        "water_nrmse_pct_water_p95_scale": 12.681212437502277,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 8.967514865459883,
+        "water_cut_rmse_percentage_points": 0.19520160944905818,
+        "liquid_control_rmse_m3_day": 6.201960845130973e-05,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P13": {
+        "valid_samples": 431,
+        "oil_rmse_m3_day": 5.8110899179889355,
+        "water_rmse_m3_day": 5.811090990130105,
+        "combined_oil_water_rmse_m3_day": 5.811090454059544,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.12093550170782592,
+        "oil_nrmse_pct_oil_p95_scale": 0.09568099734350094,
+        "water_nrmse_pct_water_p95_scale": 16.74736282052514,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 11.842367083813105,
+        "water_cut_rmse_percentage_points": 0.12133260704172918,
+        "liquid_control_rmse_m3_day": 6.733342716655851e-05,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P14": {
+        "valid_samples": 436,
+        "oil_rmse_m3_day": 277.91746824680195,
+        "water_rmse_m3_day": 277.91746610183037,
+        "combined_oil_water_rmse_m3_day": 277.9174671743162,
+        "combined_oil_water_nrmse_pct_liquid_scale": 6.337641485457844,
+        "oil_nrmse_pct_oil_p95_scale": 5.5589184756137895,
+        "water_nrmse_pct_water_p95_scale": 19.67205553443812,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 14.454953192046968,
+        "water_cut_rmse_percentage_points": 6.109405051054964,
+        "liquid_control_rmse_m3_day": 3.646800844365946e-05,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P15": {
+        "valid_samples": 428,
+        "oil_rmse_m3_day": 150.53158858579985,
+        "water_rmse_m3_day": 150.53159218184922,
+        "combined_oil_water_rmse_m3_day": 150.53159038382455,
+        "combined_oil_water_nrmse_pct_liquid_scale": 2.9218509591150825,
+        "oil_nrmse_pct_oil_p95_scale": 2.418709118721755,
+        "water_nrmse_pct_water_p95_scale": 17.036513694013486,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 12.167435075793435,
+        "water_cut_rmse_percentage_points": 2.786872093285361,
+        "liquid_control_rmse_m3_day": 4.686947938291649e-05,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P16": {
+        "valid_samples": 421,
+        "oil_rmse_m3_day": 446.0566049406768,
+        "water_rmse_m3_day": 446.0566048982906,
+        "combined_oil_water_rmse_m3_day": 446.05660491948373,
+        "combined_oil_water_nrmse_pct_liquid_scale": 10.864321828023215,
+        "oil_nrmse_pct_oil_p95_scale": 10.26598148609005,
+        "water_nrmse_pct_water_p95_scale": 21.638130872031912,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 16.935156974588754,
+        "water_cut_rmse_percentage_points": 10.185554629678593,
+        "liquid_control_rmse_m3_day": 1.8344676780416183e-05,
+        "open_well_zero_simulated_liquid_count": 0
+      }
+    },
+    "all_active_samples": {
+      "valid_samples": 2625,
+      "oil_rmse_m3_day": 220.13023713257897,
+      "water_rmse_m3_day": 220.13023702261134,
+      "combined_oil_water_rmse_m3_day": 220.13023707759518,
+      "combined_oil_water_nrmse_pct_liquid_scale": 5.196483507822719,
+      "oil_nrmse_pct_oil_p95_scale": 4.795245601245094,
+      "water_nrmse_pct_water_p95_scale": 18.265307655971384,
+      "combined_oil_water_nrmse_pct_separate_phase_scales": 13.353198945263026,
+      "water_cut_rmse_percentage_points": 4.910636216552941,
+      "liquid_control_rmse_m3_day": 4.966318220698647e-05,
+      "open_well_zero_simulated_liquid_count": 0
+    },
+    "equal_well_nrmse_pct": 5.272479409476998,
+    "equal_well_nrmse_pct_separate_phase_scales": 13.377832201419379
+  },
+  "last_365_days": {
+    "per_well": {
+      "P11": {
+        "valid_samples": 93,
+        "oil_rmse_m3_day": 2.2555210862809543,
+        "water_rmse_m3_day": 2.2555210862734985,
+        "combined_oil_water_rmse_m3_day": 2.2555210862772266,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.04340300531043342,
+        "oil_nrmse_pct_oil_p95_scale": 0.03131402674190413,
+        "water_nrmse_pct_water_p95_scale": 12.301246425364388,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 8.69832294714938,
+        "water_cut_rmse_percentage_points": 0.04359460329558931,
+        "liquid_control_rmse_m3_day": 9.468669658538189e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P12": {
+        "valid_samples": 93,
+        "oil_rmse_m3_day": 14.532349432385091,
+        "water_rmse_m3_day": 14.532349432377584,
+        "combined_oil_water_rmse_m3_day": 14.53234943238134,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.2988242825897666,
+        "oil_nrmse_pct_oil_p95_scale": 0.21405812370337277,
+        "water_nrmse_pct_water_p95_scale": 19.44064195786027,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 13.747443046145719,
+        "water_cut_rmse_percentage_points": 0.30134571383881215,
+        "liquid_control_rmse_m3_day": 9.15052045442331e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P13": {
+        "valid_samples": 95,
+        "oil_rmse_m3_day": 4.981976176385446,
+        "water_rmse_m3_day": 4.981976188659267,
+        "combined_oil_water_rmse_m3_day": 4.981976182522357,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.10368067643980389,
+        "oil_nrmse_pct_oil_p95_scale": 0.0820294395759561,
+        "water_nrmse_pct_water_p95_scale": 14.357882699893107,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 10.152721912197904,
+        "water_cut_rmse_percentage_points": 0.10494633799876268,
+        "liquid_control_rmse_m3_day": 8.200875971622716e-07,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P14": {
+        "valid_samples": 91,
+        "oil_rmse_m3_day": 298.60785448194537,
+        "water_rmse_m3_day": 298.60785448195475,
+        "combined_oil_water_rmse_m3_day": 298.6078544819501,
+        "combined_oil_water_nrmse_pct_liquid_scale": 6.809465938538385,
+        "oil_nrmse_pct_oil_p95_scale": 5.972768569440871,
+        "water_nrmse_pct_water_p95_scale": 21.136599936601623,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 15.531094959210833,
+        "water_cut_rmse_percentage_points": 6.8392014535808325,
+        "liquid_control_rmse_m3_day": 1.0034606731649176e-11,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P15": {
+        "valid_samples": 94,
+        "oil_rmse_m3_day": 60.946909161012265,
+        "water_rmse_m3_day": 60.946909161008065,
+        "combined_oil_water_rmse_m3_day": 60.94690916101016,
+        "combined_oil_water_nrmse_pct_liquid_scale": 1.1829927826653241,
+        "oil_nrmse_pct_oil_p95_scale": 0.9792817994584875,
+        "water_nrmse_pct_water_p95_scale": 6.897707235269039,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 4.926325098196093,
+        "water_cut_rmse_percentage_points": 1.230155978623479,
+        "liquid_control_rmse_m3_day": 8.599108493674815e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P16": {
+        "valid_samples": 91,
+        "oil_rmse_m3_day": 801.2865743532761,
+        "water_rmse_m3_day": 801.2865743532847,
+        "combined_oil_water_rmse_m3_day": 801.2865743532803,
+        "combined_oil_water_nrmse_pct_liquid_scale": 19.516436085101088,
+        "oil_nrmse_pct_oil_p95_scale": 18.441590251661587,
+        "water_nrmse_pct_water_p95_scale": 38.87027693673984,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 30.4219549022497,
+        "water_cut_rmse_percentage_points": 18.198747250251852,
+        "liquid_control_rmse_m3_day": 9.266728411862181e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      }
+    },
+    "all_active_samples": {
+      "valid_samples": 557,
+      "oil_rmse_m3_day": 346.59999793280167,
+      "water_rmse_m3_day": 346.5999979328361,
+      "combined_oil_water_rmse_m3_day": 346.5999979328189,
+      "combined_oil_water_nrmse_pct_liquid_scale": 8.370002943772127,
+      "oil_nrmse_pct_oil_p95_scale": 7.8461259524953215,
+      "water_nrmse_pct_water_p95_scale": 21.24593739614441,
+      "combined_oil_water_nrmse_pct_separate_phase_scales": 16.014861040660143,
+      "water_cut_rmse_percentage_points": 7.875501531820005,
+      "liquid_control_rmse_m3_day": 3.386838195653277e-07,
+      "open_well_zero_simulated_liquid_count": 0
+    },
+    "equal_well_nrmse_pct": 8.453416520468622,
+    "equal_well_nrmse_pct_separate_phase_scales": 16.117845721983674
+  },
+  "last_180_days": {
+    "per_well": {
+      "P11": {
+        "valid_samples": 52,
+        "oil_rmse_m3_day": 1.6079183490200806,
+        "water_rmse_m3_day": 1.6079183490137845,
+        "combined_oil_water_rmse_m3_day": 1.6079183490169326,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.03094118209123563,
+        "oil_nrmse_pct_oil_p95_scale": 0.022323177773094578,
+        "water_nrmse_pct_water_p95_scale": 8.769326061040081,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 6.200870015131047,
+        "water_cut_rmse_percentage_points": 0.03151142281034407,
+        "liquid_control_rmse_m3_day": 8.911191772433732e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P12": {
+        "valid_samples": 51,
+        "oil_rmse_m3_day": 9.221242739475741,
+        "water_rmse_m3_day": 9.22124273946819,
+        "combined_oil_water_rmse_m3_day": 9.221242739471965,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.1896136105885853,
+        "oil_nrmse_pct_oil_p95_scale": 0.1358267586538185,
+        "water_nrmse_pct_water_p95_scale": 12.3357120841809,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 8.723194412947961,
+        "water_cut_rmse_percentage_points": 0.1964474389788393,
+        "liquid_control_rmse_m3_day": 8.97557262638914e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P13": {
+        "valid_samples": 54,
+        "oil_rmse_m3_day": 2.6956531630812686,
+        "water_rmse_m3_day": 2.695653203004633,
+        "combined_oil_water_rmse_m3_day": 2.695653183042951,
+        "combined_oil_water_nrmse_pct_liquid_scale": 0.05609965508175116,
+        "oil_nrmse_pct_oil_p95_scale": 0.04438457961859228,
+        "water_nrmse_pct_water_p95_scale": 7.768779099433537,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 5.49344603535446,
+        "water_cut_rmse_percentage_points": 0.05759576623635116,
+        "liquid_control_rmse_m3_day": 1.0877401681435704e-06,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P14": {
+        "valid_samples": 53,
+        "oil_rmse_m3_day": 259.2663352836878,
+        "water_rmse_m3_day": 259.2663352836968,
+        "combined_oil_water_rmse_m3_day": 259.2663352836923,
+        "combined_oil_water_nrmse_pct_liquid_scale": 5.912320297759255,
+        "oil_nrmse_pct_oil_p95_scale": 5.185857623146204,
+        "water_nrmse_pct_water_p95_scale": 18.351857540477,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 13.484876611847548,
+        "water_cut_rmse_percentage_points": 6.027964466356047,
+        "liquid_control_rmse_m3_day": 9.730614963604615e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P15": {
+        "valid_samples": 55,
+        "oil_rmse_m3_day": 59.43508398494477,
+        "water_rmse_m3_day": 59.435083984943,
+        "combined_oil_water_rmse_m3_day": 59.43508398494388,
+        "combined_oil_water_nrmse_pct_liquid_scale": 1.1536479266823356,
+        "oil_nrmse_pct_oil_p95_scale": 0.9549901183992435,
+        "water_nrmse_pct_water_p95_scale": 6.726605409122991,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 4.8041246058092035,
+        "water_cut_rmse_percentage_points": 1.209092484511091,
+        "liquid_control_rmse_m3_day": 8.397672721178222e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      },
+      "P16": {
+        "valid_samples": 50,
+        "oil_rmse_m3_day": 762.042624108297,
+        "water_rmse_m3_day": 762.0426241083054,
+        "combined_oil_water_rmse_m3_day": 762.0426241083012,
+        "combined_oil_water_nrmse_pct_liquid_scale": 18.56059572636154,
+        "oil_nrmse_pct_oil_p95_scale": 17.53839172888761,
+        "water_nrmse_pct_water_p95_scale": 36.966559511616204,
+        "combined_oil_water_nrmse_pct_separate_phase_scales": 28.932003962409652,
+        "water_cut_rmse_percentage_points": 17.63443039082018,
+        "liquid_control_rmse_m3_day": 9.186346721774651e-12,
+        "open_well_zero_simulated_liquid_count": 0
+      }
+    },
+    "all_active_samples": {
+      "valid_samples": 315,
+      "oil_rmse_m3_day": 322.67340269588504,
+      "water_rmse_m3_day": 322.67340269594655,
+      "combined_oil_water_rmse_m3_day": 322.6734026959158,
+      "combined_oil_water_nrmse_pct_liquid_scale": 7.797574284752866,
+      "oil_nrmse_pct_oil_p95_scale": 7.315200106340056,
+      "water_nrmse_pct_water_p95_scale": 18.142597136499877,
+      "combined_oil_water_nrmse_pct_separate_phase_scales": 13.832316932696617,
+      "water_cut_rmse_percentage_points": 7.465707272795388,
+      "liquid_control_rmse_m3_day": 4.503672166047459e-07,
+      "open_well_zero_simulated_liquid_count": 0
+    },
+    "equal_well_nrmse_pct": 7.966829214612662,
+    "equal_well_nrmse_pct_separate_phase_scales": 14.06357720496325
+  },
+  "field_full_period": {
+    "sample_count": 491,
+    "oil_rmse_m3_day": 544.7150131517477,
+    "water_rmse_m3_day": 544.7150082888703,
+    "oil_nrmse_pct": 1.9509527058306078,
+    "water_nrmse_pct": 13.355937351449828,
+    "combined_oil_water_nrmse_pct_separate_phase_scales": 9.544298795517676,
+    "oil_water_p95_scales_m3_day": [
+      27920.462219499997,
+      4078.448363115
+    ]
+  },
+  "combined_field_well_nrmse_pct": 11.620241690848204,
+  "last_point": {
+    "P11": {
+      "status": "OPEN",
+      "independent_fit_valid": true,
+      "observed_oil_m3_day": 5102.8889,
+      "simulated_oil_m3_day": 5100.988212652954,
+      "observed_water_m3_day": 18.66499757,
+      "simulated_water_m3_day": 20.56568491704096,
+      "oil_error_m3_day": -1.900687347046187,
+      "water_error_m3_day": 1.9006873470409609
+    },
+    "P12": {
+      "status": "OPEN",
+      "independent_fit_valid": true,
+      "observed_oil_m3_day": 4580.247692,
+      "simulated_oil_m3_day": 4573.424960749592,
+      "observed_water_m3_day": 85.21052419,
+      "simulated_water_m3_day": 92.03325544039392,
+      "oil_error_m3_day": -6.822731250407742,
+      "water_error_m3_day": 6.822731250393915
+    },
+    "P13": {
+      "status": "OPEN",
+      "independent_fit_valid": true,
+      "observed_oil_m3_day": 4538.416531,
+      "simulated_oil_m3_day": 4538.764518316327,
+      "observed_water_m3_day": 40.08766492,
+      "simulated_water_m3_day": 39.73967760367008,
+      "oil_error_m3_day": 0.3479873163269076,
+      "water_error_m3_day": -0.3479873163299203
+    },
+    "P14": {
+      "status": "OPEN",
+      "independent_fit_valid": true,
+      "observed_oil_m3_day": 3139.110522,
+      "simulated_oil_m3_day": 3353.538254124015,
+      "observed_water_m3_day": 1239.851571,
+      "simulated_water_m3_day": 1025.423838875972,
+      "oil_error_m3_day": 214.42773212401517,
+      "water_error_m3_day": -214.4277321240279
+    },
+    "P15": {
+      "status": "OPEN",
+      "independent_fit_valid": true,
+      "observed_oil_m3_day": 3708.709063,
+      "simulated_oil_m3_day": 3852.3756395013843,
+      "observed_water_m3_day": 974.6822568,
+      "simulated_water_m3_day": 831.0156802986126,
+      "oil_error_m3_day": 143.6665765013845,
+      "water_error_m3_day": -143.66657650138745
+    },
+    "P16": {
+      "status": "OPEN",
+      "independent_fit_valid": true,
+      "observed_oil_m3_day": 1960.938426,
+      "simulated_oil_m3_day": 2835.1722057430115,
+      "observed_water_m3_day": 2192.142312,
+      "simulated_water_m3_day": 1317.9085322569774,
+      "oil_error_m3_day": 874.2337797430116,
+      "water_error_m3_day": -874.2337797430225
+    }
+  },
+  "valid_last_point_metrics": {
+    "valid_samples": 6,
+    "oil_rmse_m3_day": 372.1456530536818,
+    "water_rmse_m3_day": 372.14565305368745,
+    "combined_oil_water_rmse_m3_day": 372.1456530536846,
+    "combined_oil_water_nrmse_pct_liquid_scale": 8.991723865704868,
+    "oil_nrmse_pct_oil_p95_scale": 8.451511397965875,
+    "water_nrmse_pct_water_p95_scale": 20.35119817255485,
+    "combined_oil_water_nrmse_pct_separate_phase_scales": 15.582029905768808,
+    "water_cut_rmse_percentage_points": 8.91182856755682,
+    "liquid_control_rmse_m3_day": 9.237828020069835e-12,
+    "open_well_zero_simulated_liquid_count": 0
+  }
+}

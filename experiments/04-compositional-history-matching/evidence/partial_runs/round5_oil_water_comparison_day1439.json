@@ -1,0 +1,122 @@
+{
+  "partial_window_only": true,
+  "common_end_day": 1439.0,
+  "history_duration_days": 2891.0,
+  "statistical_definition": "Well statistics use OPEN observations with positive historical liquid rate. Field diagnostics report both all report times and producing times; the formal full-period field score uses producing times.",
+  "comparison": {
+    "baseline": {
+      "per_well": {
+        "P11": {
+          "valid_samples": 108,
+          "oil_rmse_m3_day": 4.337784351641827,
+          "water_rmse_m3_day": 4.337780670960947
+        },
+        "P12": {
+          "valid_samples": 98,
+          "oil_rmse_m3_day": 7.744682482241515,
+          "water_rmse_m3_day": 7.744673797927398
+        },
+        "P13": {
+          "valid_samples": 78,
+          "oil_rmse_m3_day": 0.20884842014523058,
+          "water_rmse_m3_day": 0.2088460647507453
+        },
+        "P14": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 390.14542790430215,
+          "water_rmse_m3_day": 390.14542765190157
+        },
+        "P15": {
+          "valid_samples": 79,
+          "oil_rmse_m3_day": 125.80143257199373,
+          "water_rmse_m3_day": 125.80142609930175
+        },
+        "P16": {
+          "valid_samples": 69,
+          "oil_rmse_m3_day": 57.56111801860457,
+          "water_rmse_m3_day": 57.5611178733085
+        }
+      },
+      "field_oil_rmse_m3_day": 431.04009684334846,
+      "field_water_rmse_m3_day": 431.0400799138223,
+      "field_producing_oil_rmse_m3_day": 471.84143620805906,
+      "field_producing_water_rmse_m3_day": 471.84141767601994
+    },
+    "round4": {
+      "per_well": {
+        "P11": {
+          "valid_samples": 108,
+          "oil_rmse_m3_day": 4.2688895028571245,
+          "water_rmse_m3_day": 4.268878912202895
+        },
+        "P12": {
+          "valid_samples": 98,
+          "oil_rmse_m3_day": 2.437075511783299,
+          "water_rmse_m3_day": 2.4370808411701796
+        },
+        "P13": {
+          "valid_samples": 78,
+          "oil_rmse_m3_day": 0.10464012001418042,
+          "water_rmse_m3_day": 0.10462431894224394
+        },
+        "P14": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 145.06408885327474,
+          "water_rmse_m3_day": 145.06408563580726
+        },
+        "P15": {
+          "valid_samples": 79,
+          "oil_rmse_m3_day": 20.21853768011416,
+          "water_rmse_m3_day": 20.21852700564219
+        },
+        "P16": {
+          "valid_samples": 69,
+          "oil_rmse_m3_day": 59.729219870103016,
+          "water_rmse_m3_day": 59.72921965259785
+        }
+      },
+      "field_oil_rmse_m3_day": 156.67545253616652,
+      "field_water_rmse_m3_day": 156.67543623186802,
+      "field_producing_oil_rmse_m3_day": 171.50601784984073,
+      "field_producing_water_rmse_m3_day": 171.506000002212
+    },
+    "round5": {
+      "per_well": {
+        "P11": {
+          "valid_samples": 108,
+          "oil_rmse_m3_day": 4.268442359929073,
+          "water_rmse_m3_day": 4.268431768624535
+        },
+        "P12": {
+          "valid_samples": 98,
+          "oil_rmse_m3_day": 2.4411557008988347,
+          "water_rmse_m3_day": 2.4411610200603895
+        },
+        "P13": {
+          "valid_samples": 78,
+          "oil_rmse_m3_day": 0.1039845212396025,
+          "water_rmse_m3_day": 0.10396870023982761
+        },
+        "P14": {
+          "valid_samples": 86,
+          "oil_rmse_m3_day": 145.0548944960471,
+          "water_rmse_m3_day": 145.0548912738183
+        },
+        "P15": {
+          "valid_samples": 79,
+          "oil_rmse_m3_day": 20.141306362321053,
+          "water_rmse_m3_day": 20.141295660891924
+        },
+        "P16": {
+          "valid_samples": 69,
+          "oil_rmse_m3_day": 53.10358360882049,
+          "water_rmse_m3_day": 53.10358337996632
+        }
+      },
+      "field_oil_rmse_m3_day": 152.5968370893073,
+      "field_water_rmse_m3_day": 152.59682108673238,
+      "field_producing_oil_rmse_m3_day": 167.04132933413212,
+      "field_producing_water_rmse_m3_day": 167.04131181678747
+    }
+  }
+}

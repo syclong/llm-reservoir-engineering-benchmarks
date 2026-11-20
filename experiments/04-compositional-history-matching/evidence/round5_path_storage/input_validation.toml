@@ -1,0 +1,8 @@
+"active_grid_mapping_matches" = true
+"rock_fields_verified_against_simulator" = true
+"initial_pressure_and_water_saturation_match" = true
+"initial_max_composition_sum_deviation" = 0.0
+"temperature_matches_baseline" = true
+"initial_water_saturation_max_difference" = 2.7755575615628914e-17
+"initial_pressure_max_difference_pa" = 7.450580596923828e-09
+"historical_well_controls_match" = true

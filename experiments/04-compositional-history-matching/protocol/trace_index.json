@@ -1,0 +1,54 @@
+{
+  "relevant_turn_contexts": [
+    {
+      "timestamp_utc": "2026-11-15T03:59:47.870Z",
+      "turn_id": "01a1dd5c-78e5-7861-9fb7-1bd7a0c8e4ed",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh"
+    },
+    {
+      "timestamp_utc": "2026-11-15T07:06:01.291Z",
+      "turn_id": "01a1dd5c-78e5-7861-9fb7-1bd7a0c8e4ed",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh"
+    },
+    {
+      "timestamp_utc": "2026-11-15T10:49:23.722Z",
+      "turn_id": "01a1dd5c-78e5-7861-9fb7-1bd7a0c8e4ed",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh"
+    }
+  ],
+  "by_round": {
+    "shared": {
+      "user": 1,
+      "assistant": 3,
+      "tools": 2
+    },
+    "round-01": {
+      "user": 1,
+      "assistant": 4,
+      "tools": 6
+    },
+    "round-02": {
+      "user": 2,
+      "assistant": 8,
+      "tools": 10
+    },
+    "round-03": {
+      "user": 0,
+      "assistant": 5,
+      "tools": 6
+    },
+    "round-04": {
+      "user": 0,
+      "assistant": 6,
+      "tools": 5
+    },
+    "round-05": {
+      "user": 0,
+      "assistant": 8,
+      "tools": 9
+    }
+  }
+}

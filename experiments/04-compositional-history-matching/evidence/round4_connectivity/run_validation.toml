@@ -1,0 +1,12 @@
+"overall_mole_fractions_max_sum_deviation" = 9.814371537686384e-14
+"all_reports_max_saturation_sum_deviation" = 0.0
+"expected_days" = 2891.0
+"report_state_count" = 516
+"elapsed_seconds" = 19947.6947272
+"all_reports_max_composition_sum_deviation" = 9.814371537686384e-14
+"simulator_version" = "0.4.1"
+"active_grid" = 72267
+"saturations_max_sum_deviation" = 0.0
+"reports_with_composition_checks" = 516
+"full_simulation_passed" = true
+"simulated_days" = 2891.0

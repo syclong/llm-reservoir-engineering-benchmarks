@@ -1,0 +1,110 @@
+{
+  "partial_window_only": true,
+  "cutoff_days": 1439,
+  "changed_input_files": [
+    "PORO.inc"
+  ],
+  "comparison_purpose": "Hold all permeabilities and initial compositions fixed. Reduce only hydrocarbon-bearing pore volume along the path. Spatial Sw and wellhead water rates are simulation outputs for the indicated windows. The static path alone cannot uniquely identify the source of produced water.",
+  "wellhead_response": {
+    "round4": {
+      "simulated_days": 1439.0,
+      "p16_observed_water_m3_day": 158.391775,
+      "p16_simulated_water_m3_day": 12.9092114405664
+    },
+    "round5": {
+      "simulated_days": 1439.0,
+      "p16_observed_water_m3_day": 158.391775,
+      "p16_simulated_water_m3_day": 27.27860662910592
+    }
+  },
+  "path_node_sw": [
+    {
+      "I": 14,
+      "J": 18,
+      "K": 206,
+      "depth_m": 5480.954475,
+      "round4_sw": 0.32646466627511234,
+      "round5_sw": 0.304697755108179
+    },
+    {
+      "I": 14,
+      "J": 17,
+      "K": 206,
+      "depth_m": 5506.240125,
+      "round4_sw": 0.35912503567976795,
+      "round5_sw": 0.33088304702357046
+    },
+    {
+      "I": 14,
+      "J": 16,
+      "K": 206,
+      "depth_m": 5531.2682,
+      "round4_sw": 0.41106039054613175,
+      "round5_sw": 0.34813717534137234
+    },
+    {
+      "I": 14,
+      "J": 16,
+      "K": 207,
+      "depth_m": 5536.2682,
+      "round4_sw": 0.37313145522603075,
+      "round5_sw": 0.32406388973077166
+    },
+    {
+      "I": 14,
+      "J": 16,
+      "K": 208,
+      "depth_m": 5541.2682,
+      "round4_sw": 0.3393025940285811,
+      "round5_sw": 0.3499872285989795
+    },
+    {
+      "I": 13,
+      "J": 16,
+      "K": 208,
+      "depth_m": 5542.118675,
+      "round4_sw": 0.2278972374646235,
+      "round5_sw": 0.3604095322978602
+    },
+    {
+      "I": 13,
+      "J": 15,
+      "K": 208,
+      "depth_m": 5566.113925000001,
+      "round4_sw": 0.18199480971255025,
+      "round5_sw": 0.3416124281006236
+    },
+    {
+      "I": 13,
+      "J": 15,
+      "K": 209,
+      "depth_m": 5571.113925000001,
+      "round4_sw": 0.18083523627944062,
+      "round5_sw": 0.28688967639645213
+    },
+    {
+      "I": 13,
+      "J": 15,
+      "K": 210,
+      "depth_m": 5576.113925000001,
+      "round4_sw": 0.18077161974936581,
+      "round5_sw": 0.23762024630703477
+    },
+    {
+      "I": 13,
+      "J": 15,
+      "K": 211,
+      "depth_m": 5581.113925000001,
+      "round4_sw": 0.18090435471480293,
+      "round5_sw": 0.2306871917299349
+    },
+    {
+      "I": 13,
+      "J": 14,
+      "K": 211,
+      "depth_m": 5605.593899999999,
+      "round4_sw": 0.1806913755820666,
+      "round5_sw": 0.19065348324360762
+    }
+  ]
+}

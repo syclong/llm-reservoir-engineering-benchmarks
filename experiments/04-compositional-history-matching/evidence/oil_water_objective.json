@@ -1,0 +1,25 @@
+{
+  "clarified_user_objective": "The user clarified that the objective is field and well oil and water rates over the entire history. Other responses are diagnostic and the terminal period receives no extra weight.",
+  "primary_metric": [
+    "Field FOPR",
+    "Field FWPR",
+    "WOPR for each producer",
+    "WWPR for each producer"
+  ],
+  "excluded_from_current_objective": [
+    "Producer BHP",
+    "Gas production rate",
+    "Injector THP"
+  ],
+  "editable_fields": [
+    "Porosity field",
+    "PERMX/PERMY/PERMZ fields",
+    "Initial overall mole fraction field"
+  ],
+  "composition_constraints": "Component fractions are nonnegative and sum to one per cell.",
+  "other_fixed_inputs": "Well controls, relative permeabilities, geometry, EOS parameters and historical observations are fixed. Initial pressure and water saturation retain the validated baseline values. The solver source is unchanged.",
+  "liquid_rate_control_note": "LRAT specifies the historical total liquid rate. The oil/water split is the principal independent response; satisfying the liquid constraint alone is not a fitting result.",
+  "reported_statistics": "Rank by full-period field and well oil/water errors. The final 365 days, final 180 days and last observation are supplementary diagnostics with no additional terminal weight.",
+  "normalization_scales": "Normalize oil and water rates at each aggregation level by their respective historical 95th percentiles, with a floor of 1 m3/day. Weight the field and well terms equally and the wells equally. Also report errors in m3/day. These normalization scales do not specify measurement noise.",
+  "existing_runs": "Continue the previously launched first-round pressure/gas diagnostic trials and controls, then assess them against the clarified oil/water objective. The earlier balanced_score is superseded for full-period ranking."
+}

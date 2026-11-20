@@ -1,0 +1,76 @@
+{
+  "cases": [
+    {
+      "round_id": 0,
+      "case": "baseline_tuned",
+      "status": "full period",
+      "completed_days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_percent": 37.97760693786819,
+      "score": "evidence/baseline_tuned/oil_water_score.json"
+    },
+    {
+      "round_id": 1,
+      "case": "round1_full",
+      "status": "stopped early",
+      "completed_days": 1912.0,
+      "report_steps": 248,
+      "stop_reason": "The user clarified the field and well oil/water objective. First-round partial feedback already informed subsequent candidates. Reallocate computation to rounds two and three. The full-period outcome is unknown and the first candidate is excluded from the full-period ranking.",
+      "decision": "decisions/round1_decision.json"
+    },
+    {
+      "round_id": 1,
+      "case": "round1_k_only",
+      "status": "stopped early",
+      "completed_days": 1809.0,
+      "report_steps": 234,
+      "stop_reason": "The permeability-only comparison was stopped deliberately to concentrate computation on the full-period oil/water candidates. The solver had not reported an error. Retain partial results as partial.",
+      "decision": "decisions/round1_decision.json"
+    },
+    {
+      "round_id": 1,
+      "case": "round1_k_phi",
+      "status": "withdrawn from queue",
+      "decision": "decisions/round1_decision.json"
+    },
+    {
+      "round_id": 2,
+      "case": "round2_oil_water",
+      "status": "stopped early",
+      "completed_days": 1446.0,
+      "report_steps": 141,
+      "stop_reason": "The model stopped the run. P15 and P16 showed early water during the first 1281 days of round two, and round three improved the common-window fit. Round-two report step 142 (day 1446 to 1465) ran for more than 40 minutes without a new report. Preserve it as an incomplete trial and prioritize completing the baseline and round three. No solver error was reported and the full-period outcome was unknown.",
+      "decision": "decisions/round2_decision.json"
+    },
+    {
+      "round_id": 3,
+      "case": "round3_timing",
+      "status": "full period",
+      "completed_days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_percent": 20.791395819944206,
+      "score": "evidence/round3_timing/oil_water_score.json",
+      "decision": "decisions/round3_decision.json"
+    },
+    {
+      "round_id": 4,
+      "case": "round4_connectivity",
+      "status": "full period",
+      "completed_days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_percent": 13.914954811608267,
+      "score": "evidence/round4_connectivity/oil_water_score.json",
+      "decision": "decisions/round4_decision.json"
+    },
+    {
+      "round_id": 5,
+      "case": "round5_path_storage",
+      "status": "full period",
+      "completed_days": 2891,
+      "report_steps": 516,
+      "combined_nrmse_percent": 11.620241690848204,
+      "score": "evidence/round5_path_storage/oil_water_score.json",
+      "decision": "decisions/round5_decision.json"
+    }
+  ]
+}

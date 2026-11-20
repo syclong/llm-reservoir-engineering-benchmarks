@@ -1,0 +1,446 @@
+{
+  "definition": "For each well use OPEN report times with positive historical liquid rate. Report the first day water cut reaches a specified threshold, without interpolation or a persistence requirement. A missing crossing is null.",
+  "purpose": "Used to diagnose water arrival and spatial-edit hypotheses. The window introduces no new ranking weights and provides no blind-test evidence.",
+  "case": {
+    "baseline_tuned": {
+      "P11": {
+        "0.1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": null
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P12": {
+        "0.1%": {
+          "observed_water_cut": 1313.0,
+          "simulated_water_cut": 968.0
+        },
+        "1%": {
+          "observed_water_cut": 1935.0,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P13": {
+        "0.1%": {
+          "observed_water_cut": 2395.4,
+          "simulated_water_cut": null
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P14": {
+        "0.1%": {
+          "observed_water_cut": 1085.0,
+          "simulated_water_cut": 1822.0
+        },
+        "1%": {
+          "observed_water_cut": 1101.0,
+          "simulated_water_cut": 2126.0
+        },
+        "5%": {
+          "observed_water_cut": 1204.0,
+          "simulated_water_cut": 2747.0
+        },
+        "10%": {
+          "observed_water_cut": 1323.0,
+          "simulated_water_cut": null
+        }
+      },
+      "P15": {
+        "0.1%": {
+          "observed_water_cut": 1148.0,
+          "simulated_water_cut": 1513.0
+        },
+        "1%": {
+          "observed_water_cut": 1240.0,
+          "simulated_water_cut": 1674.0
+        },
+        "5%": {
+          "observed_water_cut": 1479.0,
+          "simulated_water_cut": 2541.0
+        },
+        "10%": {
+          "observed_water_cut": 2082.0,
+          "simulated_water_cut": null
+        }
+      },
+      "P16": {
+        "0.1%": {
+          "observed_water_cut": 1274.0,
+          "simulated_water_cut": 1281.0
+        },
+        "1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 1747.0
+        },
+        "5%": {
+          "observed_water_cut": 1465.0,
+          "simulated_water_cut": 2469.0
+        },
+        "10%": {
+          "observed_water_cut": 1753.6,
+          "simulated_water_cut": 2822.0
+        }
+      }
+    },
+    "round3_timing": {
+      "P11": {
+        "0.1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 2606.0
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P12": {
+        "0.1%": {
+          "observed_water_cut": 1313.0,
+          "simulated_water_cut": 968.0
+        },
+        "1%": {
+          "observed_water_cut": 1935.0,
+          "simulated_water_cut": 2497.0
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P13": {
+        "0.1%": {
+          "observed_water_cut": 2395.4,
+          "simulated_water_cut": 2105.0
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P14": {
+        "0.1%": {
+          "observed_water_cut": 1085.0,
+          "simulated_water_cut": 1101.0
+        },
+        "1%": {
+          "observed_water_cut": 1101.0,
+          "simulated_water_cut": 1101.5
+        },
+        "5%": {
+          "observed_water_cut": 1204.0,
+          "simulated_water_cut": 1167.0
+        },
+        "10%": {
+          "observed_water_cut": 1323.0,
+          "simulated_water_cut": 1676.0
+        }
+      },
+      "P15": {
+        "0.1%": {
+          "observed_water_cut": 1148.0,
+          "simulated_water_cut": 1204.0
+        },
+        "1%": {
+          "observed_water_cut": 1240.0,
+          "simulated_water_cut": 1271.0
+        },
+        "5%": {
+          "observed_water_cut": 1479.0,
+          "simulated_water_cut": 1429.0
+        },
+        "10%": {
+          "observed_water_cut": 2082.0,
+          "simulated_water_cut": 1753.0
+        }
+      },
+      "P16": {
+        "0.1%": {
+          "observed_water_cut": 1274.0,
+          "simulated_water_cut": 1204.0
+        },
+        "1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 1358.0
+        },
+        "5%": {
+          "observed_water_cut": 1465.0,
+          "simulated_water_cut": 1703.0
+        },
+        "10%": {
+          "observed_water_cut": 1753.6,
+          "simulated_water_cut": 2090.0
+        }
+      }
+    },
+    "round4_connectivity": {
+      "P11": {
+        "0.1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 1576.0
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P12": {
+        "0.1%": {
+          "observed_water_cut": 1313.0,
+          "simulated_water_cut": 968.0
+        },
+        "1%": {
+          "observed_water_cut": 1935.0,
+          "simulated_water_cut": 2136.0
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P13": {
+        "0.1%": {
+          "observed_water_cut": 2395.4,
+          "simulated_water_cut": 2107.0
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P14": {
+        "0.1%": {
+          "observed_water_cut": 1085.0,
+          "simulated_water_cut": 1101.0
+        },
+        "1%": {
+          "observed_water_cut": 1101.0,
+          "simulated_water_cut": 1101.0
+        },
+        "5%": {
+          "observed_water_cut": 1204.0,
+          "simulated_water_cut": 1154.0
+        },
+        "10%": {
+          "observed_water_cut": 1323.0,
+          "simulated_water_cut": 1488.0
+        }
+      },
+      "P15": {
+        "0.1%": {
+          "observed_water_cut": 1148.0,
+          "simulated_water_cut": 1209.0
+        },
+        "1%": {
+          "observed_water_cut": 1240.0,
+          "simulated_water_cut": 1271.0
+        },
+        "5%": {
+          "observed_water_cut": 1479.0,
+          "simulated_water_cut": 1479.0
+        },
+        "10%": {
+          "observed_water_cut": 2082.0,
+          "simulated_water_cut": 1871.0
+        }
+      },
+      "P16": {
+        "0.1%": {
+          "observed_water_cut": 1274.0,
+          "simulated_water_cut": 1327.0
+        },
+        "1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 1703.0
+        },
+        "5%": {
+          "observed_water_cut": 1465.0,
+          "simulated_water_cut": 1763.0
+        },
+        "10%": {
+          "observed_water_cut": 1753.6,
+          "simulated_water_cut": 1844.0
+        }
+      }
+    },
+    "round5_path_storage": {
+      "P11": {
+        "0.1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 1576.0
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P12": {
+        "0.1%": {
+          "observed_water_cut": 1313.0,
+          "simulated_water_cut": 968.0
+        },
+        "1%": {
+          "observed_water_cut": 1935.0,
+          "simulated_water_cut": 2136.0
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P13": {
+        "0.1%": {
+          "observed_water_cut": 2395.4,
+          "simulated_water_cut": 2105.0
+        },
+        "1%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "5%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        },
+        "10%": {
+          "observed_water_cut": null,
+          "simulated_water_cut": null
+        }
+      },
+      "P14": {
+        "0.1%": {
+          "observed_water_cut": 1085.0,
+          "simulated_water_cut": 1101.0
+        },
+        "1%": {
+          "observed_water_cut": 1101.0,
+          "simulated_water_cut": 1101.0
+        },
+        "5%": {
+          "observed_water_cut": 1204.0,
+          "simulated_water_cut": 1154.0
+        },
+        "10%": {
+          "observed_water_cut": 1323.0,
+          "simulated_water_cut": 1488.0
+        }
+      },
+      "P15": {
+        "0.1%": {
+          "observed_water_cut": 1148.0,
+          "simulated_water_cut": 1209.0
+        },
+        "1%": {
+          "observed_water_cut": 1240.0,
+          "simulated_water_cut": 1271.0
+        },
+        "5%": {
+          "observed_water_cut": 1479.0,
+          "simulated_water_cut": 1479.0
+        },
+        "10%": {
+          "observed_water_cut": 2082.0,
+          "simulated_water_cut": 1871.0
+        }
+      },
+      "P16": {
+        "0.1%": {
+          "observed_water_cut": 1274.0,
+          "simulated_water_cut": 1321.0
+        },
+        "1%": {
+          "observed_water_cut": 1358.0,
+          "simulated_water_cut": 1465.0
+        },
+        "5%": {
+          "observed_water_cut": 1465.0,
+          "simulated_water_cut": 1703.0
+        },
+        "10%": {
+          "observed_water_cut": 1753.6,
+          "simulated_water_cut": 1727.0
+        }
+      }
+    }
+  }
+}
