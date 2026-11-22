@@ -2,7 +2,7 @@
 
 Compare language-model proposals with particle swarm optimization (PSO) for joint well placement and bottom-hole pressure control. Each plan specifies two injectors, two producers, and five pressure periods per well. JutulDarcy evaluates it from the same initial state over 3,650 days. The objective is field cumulative surface oil production (FOPT) in standard cubic meters.
 
-The LLM has five proposals. Synchronous PSO has five particles and five generations, giving 25 evaluations including the initial swarm. The report also compares the first five PSO evaluations with all five LLM proposals. A separate two-particle asynchronous PSO is available for the original five-versus-five design. [Experiment design](docs/experiment-design.md) · [Data provenance](docs/data-and-software.md)
+The recorded comparison uses five LLM proposals and 25 particle swarm evaluations (five particles in each of five generations, including the initial swarm). The best ten-year cumulative oil was **1,794,847.76 sm³** for the LLM and **1,648,907.20 sm³** for the swarm. [Recorded results and full simulation download](results/) · [Final comparison](results/comparison.json) · [Experiment design](docs/experiment-design.md) · [Data provenance](docs/data-and-software.md)
 
 ## Model
 

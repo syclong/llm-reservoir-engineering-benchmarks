@@ -1,0 +1,112 @@
+{
+  "status": "complete",
+  "pso25": {
+    "simulator": "JutulDarcy",
+    "generations": 5,
+    "particles": 5,
+    "seed": 20261118,
+    "proposals": 25,
+    "simulator_calls": 25,
+    "successful": 25,
+    "best": {
+      "generation": 4,
+      "particle_id": 2,
+      "evaluation": 17,
+      "fopt_sm3": 1648907.202773599,
+      "plan": {
+        "INJ1": [
+          13,
+          46,
+          416.8,
+          388.81,
+          377.56,
+          391.25,
+          389.12
+        ],
+        "INJ2": [
+          59,
+          44,
+          295.47,
+          326.3,
+          434.83,
+          319.83,
+          336.13
+        ],
+        "PROD1": [
+          43,
+          14,
+          165.64,
+          178.39,
+          139.53,
+          147.48,
+          241.48
+        ],
+        "PROD2": [
+          1,
+          15,
+          142.97,
+          229.62,
+          160.54,
+          103.1,
+          143.44
+        ]
+      }
+    }
+  },
+  "llm5": {
+    "rounds": 5,
+    "simulator_calls": 5,
+    "successful": 5,
+    "best_round": 3,
+    "best_fopt_sm3": 1794847.7558171845,
+    "plan": {
+      "INJ1": [
+        47,
+        7,
+        450,
+        450,
+        450,
+        450,
+        450
+      ],
+      "INJ2": [
+        55,
+        49,
+        450,
+        450,
+        450,
+        450,
+        450
+      ],
+      "PROD1": [
+        22,
+        22,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "PROD2": [
+        17,
+        39,
+        100,
+        100,
+        100,
+        100,
+        100
+      ]
+    }
+  },
+  "full_budget": {
+    "llm_calls": 5,
+    "pso_calls": 25,
+    "llm_best_sm3": 1794847.7558171845,
+    "pso_best_sm3": 1648907.202773599,
+    "llm_minus_pso_sm3": 145940.5530435855,
+    "llm_relative_to_pso": 0.08850743862244119,
+    "pso_relative_to_llm": -0.08131082570685198,
+    "winner": "llm"
+  },
+  "tie_tolerance_sm3": 1.0
+}
