@@ -41,4 +41,4 @@ Run the following command from the repository root with Python 3.12 and NumPy 2.
 python experiments/03-development-planning/reproduce.py verify
 ~~~
 
-The command integrates the recorded surface oil rates over accepted substeps, checks the grid inventories and well controls, reconstructs the prompts and the five seeded particle generations, and verifies the public comparison tables. It runs offline from the supplied ZIP. [Record provenance](../docs/result-provenance.md)
+The command integrates the recorded surface oil rates over accepted substeps, checks the grid inventories and well controls, reconstructs the prompts and the five seeded particle generations, and verifies the public comparison tables. It runs offline from the supplied ZIP.
