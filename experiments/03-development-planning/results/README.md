@@ -31,9 +31,7 @@ The folders `llm/r01` through `llm/r05` and `pso25/r01` through `pso25/r25` each
 | `jutul/complete.toml`, `verification.json` | Solver completion, well controls, shut-in dates, integrated volumes, and checksums of the raw solver files |
 | `feedback.txt` | Production history and final pressure (bar) and saturation matrices in the text format used for round feedback |
 
-The LLM folders include the five complete English-edition prompts and the original JSON replies. `llm/calls.json` records the single input message and zero registered tools for each completed response. The particle folders include the submitted plans. `pso25/generations/` contains the five batches as registered before evaluation.
-
-The original study used Chinese prompts. Prompt text, feedback labels, and two deck comments are provided in English. Numerical CSVs, replies, and solver receipts retain their recorded bytes. For these translated files, `text_editions.csv` pairs the original checksum used by the run record with the checksum of the published copy.
+Each LLM round includes `prompt.txt` for replay and the submitted plan in `response.json.txt`. `llm/calls.json` records the single input message and zero registered tools for each completed response. The particle folders include the submitted plans. `pso25/generations/` contains the five batches as registered before evaluation.
 
 ## Replay the recorded scores
 
@@ -43,4 +41,4 @@ Run the following command from the repository root with Python 3.12 and NumPy 2.
 python experiments/03-development-planning/reproduce.py verify
 ~~~
 
-The command integrates the recorded surface oil rates over accepted substeps, checks the grid inventories and well controls, reconstructs the English prompts and the five seeded particle generations, and verifies the public comparison tables. It runs offline from the supplied ZIP.
+The command integrates the recorded surface oil rates over accepted substeps, checks the grid inventories and well controls, reconstructs the prompts and the five seeded particle generations, and verifies the public comparison tables. It runs offline from the supplied ZIP. [Record provenance](../docs/result-provenance.md)

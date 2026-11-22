@@ -12,9 +12,7 @@ The model is **gpt-6-astra**. The [model file](model.json) contains a single fie
 {"model": "gpt-6-astra"}
 ~~~
 
-Automatic runs use the local `llm` command on PATH. It must already support the named model. Each round runs a new process, writes the full English prompt to standard input, and reads one proposal from standard output. Alternatively, generate the prompt and submit the model's response as a file. Both paths use the same validator, simulator, and scoring code.
-
-These prompts are the English edition. The earlier study used Chinese prompts. Translation changes the prompt bytes and their registered hashes. Start a fresh study directory when running this edition.
+Automatic runs use the local `llm` command on PATH. It must already support the named model. Each round runs a new process, writes the complete prompt to standard input, and reads one proposal from standard output. Alternatively, generate the prompt and submit the model's response as a file. Both paths use the same validator, simulator, and scoring code.
 
 ## Install
 
@@ -58,7 +56,7 @@ python -m fopt5 audit --arm pso --study runs/jutuldarcy_pso
 ## Prompts, results, and recovery
 
 - The [initial prompt](prompts/round_1_complete.txt) and [round 2–5 templates](prompts/README.md) contain the full base deck. The [five-proposal protocol](protocol.json) sets the input budget. The harness checks the UTF-8 byte estimate against the study limit before sending the prompt. The [synchronous PSO protocol](pso25/protocol.json) sets the extended simulation budget.
-- Each valid evaluation saves its `MODEL.DATA`, accepted substep rates, initial and final cell fields, solver receipt, and verification report. The LLM arm also saves the model name, the exact prompt, and the original response. The archives can be audited offline.
+- In a new run, each valid evaluation saves its `MODEL.DATA`, accepted substep rates, initial and final cell fields, solver receipt, and verification report. The LLM arm also saves the model name, the prompt sent, and the response received. The archives can be audited offline.
 - To settle an interrupted round that already has a complete simulation receipt, use `python -m fopt5 recover --arm llm --round N` with the same study directory. To use an original response that has already been delivered, add `--original-response FILE`. Use `--abandon` to mark the round as interrupted.
 
 ## Standalone script
